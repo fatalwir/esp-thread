@@ -1,0 +1,168 @@
+#
+# Flash / partition table  -- ESP32-C6-DevKitC-1 (8 MB)
+#
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+CONFIG_PARTITION_TABLE_MD5=y
+
+#
+# Console
+#
+# Unlike the PPP variant, nothing here needs the USB Serial/JTAG port, so the
+# secondary console is left at its default (mirrors logs onto USB) and the USB
+# connector stays available for JTAG debugging.
+#
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+#
+# Backbone: WIZnet W5500 over SPI
+#
+# NOTE: the stock protocol_examples_common defaults (SCLK 14 / MOSI 13 /
+# MISO 12 / CS 15 / INT 4) are wrong for an ESP32-C6: GPIO12 and GPIO13 are the
+# chip's USB D-/D+, and GPIO4 and GPIO15 are strapping pins. Every pin below is
+# overridden accordingly, avoiding strapping pins (4, 5, 8, 9, 15), the USB
+# pair (12, 13), UART0 (16, 17) and the SPI flash range (24-30).
+#
+# All five signals sit on the J1 side of the DevKitC-1. Of the pins broken out
+# there (0, 1, 4-8, 10-13), GPIO12/13 are the USB D-/D+ pair, GPIO4/5 are
+# strapping pins, and GPIO8 drives the RGB LED used by the OpenThread role
+# indicator -- which leaves exactly 0, 1, 6, 7, 10, 11 for five signals.
+#
+# SCLK and MOSI take GPIO6 and GPIO7 because those are SPI2's native IO_MUX
+# pins (see soc/esp32c6/include/soc/spi_pins.h). That is convention rather than
+# a speed win: the driver only takes the IO_MUX path when *every* pin matches,
+# and CS's native pin is GPIO16 (the console UART) while MISO's is GPIO2 (not
+# on this side), so the bus runs through the GPIO matrix regardless. Hence the
+# 20 MHz ceiling below.
+#
+# GPIO0 is deliberately left spare -- it is the only slack on this side.
+#
+# The W5500's RST is NOT wired to the ESP: tie it to 3V3 through a 10k pull-up.
+# Firmware never drives it (the SPI-Ethernet path has no reset GPIO), and GPIO8
+# is unavailable anyway.
+#
+# Change them in menuconfig under "Example Connection Configuration".
+#
+CONFIG_EXAMPLE_CONNECT_WIFI=n
+# Must be n. It defaults to y when OpenThread is enabled, and EXAMPLE_CONNECT_IPV4
+# is declared "default n if EXAMPLE_CONNECT_THREAD" -- leaving it on silently
+# disables DHCPv4 on the backbone, which would leave NAT64 with no IPv4 path.
+# EXAMPLE_CONNECT_IPV4 itself is a hidden symbol and cannot be forced here.
+CONFIG_EXAMPLE_CONNECT_THREAD=n
+CONFIG_EXAMPLE_CONNECT_ETHERNET=y
+CONFIG_EXAMPLE_USE_W5500=y
+CONFIG_EXAMPLE_ETH_SPI_HOST=1
+CONFIG_EXAMPLE_ETH_SPI_SCLK_GPIO=6
+CONFIG_EXAMPLE_ETH_SPI_MOSI_GPIO=7
+CONFIG_EXAMPLE_ETH_SPI_MISO_GPIO=1
+CONFIG_EXAMPLE_ETH_SPI_CS_GPIO=10
+CONFIG_EXAMPLE_ETH_SPI_INT_GPIO=11
+# Conservative for jumper wires. The W5500 will go much faster on a PCB.
+CONFIG_EXAMPLE_ETH_SPI_CLOCK_MHZ=20
+CONFIG_EXAMPLE_CONNECT_IPV6=y
+CONFIG_EXAMPLE_CONNECT_IPV6_PREF_LOCAL_LINK=y
+
+#
+# lwIP -- IPv6 forwarding and the hooks the border router installs
+#
+CONFIG_LWIP_IPV6_FORWARD=y
+CONFIG_LWIP_IPV6_NUM_ADDRESSES=12
+CONFIG_LWIP_MULTICAST_PING=y
+CONFIG_LWIP_NETIF_STATUS_CALLBACK=y
+CONFIG_LWIP_HOOK_IP6_ROUTE_DEFAULT=y
+CONFIG_LWIP_HOOK_ND6_GET_GW_DEFAULT=y
+CONFIG_LWIP_HOOK_IP6_INPUT_CUSTOM=y
+CONFIG_LWIP_HOOK_IP6_SELECT_SRC_ADDR_CUSTOM=y
+CONFIG_LWIP_IPV6_AUTOCONFIG=y
+
+#
+# OpenThread -- single SoC, native 802.15.4 radio, no RCP
+#
+CONFIG_OPENTHREAD_ENABLED=y
+CONFIG_OPENTHREAD_BORDER_ROUTER=y
+CONFIG_OPENTHREAD_RADIO_NATIVE=y
+CONFIG_OPENTHREAD_FTD=y
+CONFIG_OPENTHREAD_TASK_SIZE=10240
+CONFIG_OPENTHREAD_PLATFORM_NETIF=y
+
+CONFIG_OPENTHREAD_CLI=y
+CONFIG_OPENTHREAD_CONSOLE_ENABLE=n
+CONFIG_OPENTHREAD_CLI_ESP_EXTENSION=y
+# ot_examples_br has a #error on this -- it conflicts with BR auto-init.
+CONFIG_OPENTHREAD_CLI_WIFI=n
+
+# No Wi-Fi, so no radio coexistence: the 802.15.4 radio has the single RF path
+# to itself. This is the main reason a wired backbone beats Wi-Fi on a C6.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=n
+
+#
+# OpenThread features
+#
+# Free with CONFIG_OPENTHREAD_BORDER_ROUTER=y (see
+# openthread-core-esp32x-ftd-config.h): BORDER_ROUTING, NAT64_BORDER_ROUTING,
+# SRP_SERVER, DNS_UPSTREAM_QUERY, BACKBONE_ROUTER, DHCP6_PD(_CLIENT) -- and,
+# because they default to BORDER_ROUTING_ENABLE, also TMF_NETDIAG_CLIENT and
+# MESH_DIAG, i.e. `networkdiagnostic` and `meshdiag`.
+#
+CONFIG_OPENTHREAD_DNS64_CLIENT=y
+CONFIG_OPENTHREAD_DNS_CLIENT=y
+CONFIG_OPENTHREAD_SRP_CLIENT=y
+CONFIG_OPENTHREAD_BORDER_AGENT_ENABLE=y
+CONFIG_OPENTHREAD_COMMISSIONER=y
+CONFIG_OPENTHREAD_JOINER=y
+CONFIG_OPENTHREAD_DIAG=y
+CONFIG_OPENTHREAD_LINK_METRICS=y
+CONFIG_OPENTHREAD_MACFILTER_ENABLE=y
+CONFIG_OPENTHREAD_RADIO_STATS_ENABLE=y
+
+# Thread role on the on-board RGB LED (GPIO8, WS2812 via RMT):
+#   Leader = red, Router = blue, Child = green, Detached = dim white.
+# This is why the W5500's RST must not be wired to GPIO8.
+CONFIG_OPENTHREAD_STATE_INDICATOR_ENABLE=y
+CONFIG_OPENTHREAD_STATE_INDICATOR_GPIO=8
+
+# Off on purpose: changes what goes on the air, so every node in the mesh must
+# be rebuilt with it. Enable here AND in projects/ot_cli together, or use SNTP.
+CONFIG_OPENTHREAD_TIME_SYNC=n
+
+# Macros with no Kconfig switch of their own.
+CONFIG_OPENTHREAD_HEADER_CUSTOM=y
+CONFIG_OPENTHREAD_CUSTOM_HEADER_PATH="main"
+CONFIG_OPENTHREAD_CUSTOM_HEADER_FILE_NAME="esp_ot_custom_config.h"
+
+# Upstream DNS that the DNS64 path synthesises into the NAT64 prefix.
+CONFIG_OPENTHREAD_DNS_SERVER_ADDR="8.8.8.8"
+
+#
+# Thread network -- identical dataset to projects/ot_cli and ot_br_ppp.
+#
+CONFIG_OPENTHREAD_NETWORK_AUTO_START=y
+CONFIG_OPENTHREAD_NETWORK_NAME="ESPThreadTest"
+CONFIG_OPENTHREAD_NETWORK_CHANNEL=15
+CONFIG_OPENTHREAD_NETWORK_PANID=0x4257
+CONFIG_OPENTHREAD_NETWORK_EXTPANID="1111111122222222"
+CONFIG_OPENTHREAD_NETWORK_MASTERKEY="000102030405060708090a0b0c0d0e0f"
+CONFIG_OPENTHREAD_NETWORK_PSKC="0102030405060708090a0b0c0d0e0f10"
+
+#
+# mbedTLS -- Thread commissioning / DTLS
+#
+CONFIG_MBEDTLS_CMAC_C=y
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECJPAKE=y
+CONFIG_MBEDTLS_ECJPAKE_C=y
+
+#
+# mDNS
+#
+CONFIG_MDNS_MULTIPLE_INSTANCE=y
+
+#
+# System
+#
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096

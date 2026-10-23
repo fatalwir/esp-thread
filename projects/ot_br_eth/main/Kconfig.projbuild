@@ -1,0 +1,25 @@
+menu "Thread Border Router over Ethernet"
+
+    config OT_BR_MDNS_HOSTNAME
+        string "mDNS hostname advertised on the backbone"
+        default "esp-ot-br"
+
+    config OT_BR_SNTP_ENABLE
+        bool "Synchronise wall-clock time over SNTP"
+        default y
+        help
+            Started at boot; the SNTP service retries internally until the
+            Ethernet link and DHCP have come up, so no ordering is required.
+
+            This does NOT by itself set the clock on mesh nodes -- see README.
+
+    config OT_BR_SNTP_SERVER
+        string "SNTP server"
+        depends on OT_BR_SNTP_ENABLE
+        default "pool.ntp.org"
+        help
+            A hostname requires working DNS. Use a literal IP (your LAN's NTP
+            server, or your router) if you would rather not depend on
+            name resolution.
+
+endmenu

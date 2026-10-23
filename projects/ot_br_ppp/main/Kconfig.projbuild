@@ -1,0 +1,81 @@
+menu "Thread Border Router over PPP"
+
+    menu "PPP backbone (USB Serial/JTAG)"
+
+        config OT_BR_PPP_LOCAL_IP4
+            string "Our IPv4 address on the PPP link"
+            default "192.168.77.1"
+            help
+                Address this board asks for during IPCP. The upstream router
+                (the PPP client) is offered OT_BR_PPP_PEER_IP4.
+
+                IPv6 does not use these -- IPV6CP only negotiates interface
+                identifiers -- but NAT64 needs IPv4 connectivity on the
+                backbone, and having a v4 pair also gives you a second way to
+                reach the board for debugging.
+
+        config OT_BR_PPP_PEER_IP4
+            string "Peer IPv4 address on the PPP link"
+            default "192.168.77.2"
+
+        config OT_BR_PPP_RX_BUFFER_SIZE
+            int "USB Serial/JTAG RX ring buffer (bytes)"
+            default 2048
+            range 256 16384
+            help
+                The peripheral FIFO is small and CDC-ACM has no hardware flow
+                control, so give the driver room to absorb bursts.
+
+        config OT_BR_PPP_TX_BUFFER_SIZE
+            int "USB Serial/JTAG TX ring buffer (bytes)"
+            default 2048
+            range 256 16384
+
+        config OT_BR_PPP_RX_CHUNK_SIZE
+            int "Bytes read per usb_serial_jtag_read_bytes() call"
+            default 512
+            range 64 4096
+
+        config OT_BR_PPP_RX_TASK_STACK
+            int "PPP receive task stack size"
+            default 4096
+
+        config OT_BR_PPP_RX_TASK_PRIO
+            int "PPP receive task priority"
+            default 6
+
+    endmenu
+
+    menu "Services"
+
+        config OT_BR_MDNS_HOSTNAME
+            string "mDNS hostname advertised on the backbone"
+            default "esp-ot-br"
+
+        config OT_BR_SNTP_ENABLE
+            bool "Synchronise wall-clock time over SNTP"
+            default y
+            help
+                Started once the PPP link is up. Gives the border router real
+                time, which the SRP/DNS-SD server and any logging benefit from.
+
+                This does NOT by itself set the clock on mesh nodes. See the
+                README for the two ways to do that.
+
+        config OT_BR_SNTP_SERVER
+            string "SNTP server"
+            depends on OT_BR_SNTP_ENABLE
+            default "pool.ntp.org"
+            help
+                A hostname needs working DNS through the backbone. If you would
+                rather not depend on that, put a literal IP address here -- the
+                LAN's own NTP server, or the upstream router.
+
+        config OT_BR_SNTP_SYNC_TIMEOUT_MS
+            int "How long to wait for the first sync (ms)"
+            depends on OT_BR_SNTP_ENABLE
+            default 15000
+
+    endmenu
+
+endmenu

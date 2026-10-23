@@ -1,0 +1,7 @@
+# ESP32-C6-DevKitC-1 has 8 MB of flash, so the app partition is generous:
+# the border router image is far larger than ot_cli (NAT64, SRP/DNS-SD server,
+# mDNS, border routing) and there is room left for the web UI later.
+# Name,     Type, SubType, Offset,  Size, Flags
+nvs,        data, nvs,      ,  0x6000,
+phy_init,   data, phy,      ,  0x1000,
+factory,    app,  factory,  ,      3M,

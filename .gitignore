@@ -1,0 +1,8 @@
+# Self-contained ESP-IDF toolchain, Python venv, and downloaded tool archives
+.espressif/
+
+# Per-project build artifacts
+projects/**/build/
+projects/**/managed_components/
+projects/**/dependencies.lock
+projects/**/sdkconfig
