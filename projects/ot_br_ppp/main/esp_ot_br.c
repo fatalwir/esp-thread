@@ -41,6 +41,7 @@
 #include "lwip/netif.h"
 #include "mdns.h"
 #include "nvs_flash.h"
+#include "openthread/border_routing.h"
 #include "ot_examples_common.h"
 #include "ppp_modem.h"
 
@@ -105,14 +106,20 @@ static void br_backbone_task(void *ctx)
 
     ESP_ERROR_CHECK(ppp_modem_start());
 
-    /* Block until the upstream router has dialled in. Without a backbone
+    /* Block until the upstream router has answered. Without a backbone
      * there is nothing for the border routing logic to attach to. */
-    ESP_LOGI(TAG, "waiting for the PPP peer...");
+    ESP_LOGI(TAG, "waiting for the PPP link...");
     ESP_ERROR_CHECK(ppp_modem_wait_connected(0 /* wait forever */));
 
     esp_openthread_lock_acquire(portMAX_DELAY);
     esp_openthread_set_backbone_netif(ppp_modem_get_netif());
     esp_err_t err = esp_openthread_border_router_init();
+    if (err == ESP_OK) {
+        /* Ask the router to delegate the mesh's prefix (DHCPv6-PD), so the
+         * router decides the addressing on the Thread side too. Without a
+         * delegation the border router falls back to its own ULA prefix. */
+        otBorderRoutingDhcp6PdSetEnabled(esp_openthread_get_instance(), true);
+    }
     esp_openthread_lock_release();
 
     if (err != ESP_OK) {

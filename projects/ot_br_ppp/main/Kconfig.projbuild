@@ -2,21 +2,24 @@ menu "Thread Border Router over PPP"
 
     menu "PPP backbone (USB Serial/JTAG)"
 
-        config OT_BR_PPP_LOCAL_IP4
-            string "Our IPv4 address on the PPP link"
-            default "192.168.77.1"
+        config OT_BR_PPP_USER
+            string "PPP user name"
+            default "esp-ot-br"
             help
-                Address this board asks for during IPCP. The upstream router
-                (the PPP client) is offered OT_BR_PPP_PEER_IP4.
+                Name this board authenticates with (PAP or CHAP, whichever
+                the upstream router asks for). Leave empty if the router does
+                not require authentication.
 
-                IPv6 does not use these -- IPV6CP only negotiates interface
-                identifiers -- but NAT64 needs IPv4 connectivity on the
-                backbone, and having a v4 pair also gives you a second way to
-                reach the board for debugging.
+                The router assigns everything else: this board's IPv4
+                address, the gateway and the DNS server come over IPCP, and
+                the IPv6 prefix for the mesh over DHCPv6-PD.
 
-        config OT_BR_PPP_PEER_IP4
-            string "Peer IPv4 address on the PPP link"
-            default "192.168.77.2"
+        config OT_BR_PPP_PASSWORD
+            string "PPP password"
+            default ""
+            help
+                Set it in network.defaults at the repository root rather
+                than here, so it stays out of git.
 
         config OT_BR_PPP_RX_BUFFER_SIZE
             int "USB Serial/JTAG RX ring buffer (bytes)"

@@ -24,13 +24,11 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 #
 # PPP
 #
-# CONFIG_LWIP_PPP_SERVER_SUPPORT lets this board act as the PPP *server*: it
-# hands out the IPCP addresses, and the upstream router is the PPP *client*.
-# It does not decide who starts LCP -- that is esp_netif_ppp_config_t's
-# ppp_passive, which ppp_modem.c leaves false on purpose. See the README.
+# This board is the PPP *client*. The upstream router runs the PPP server,
+# authenticates the board (PAP or CHAP, credentials in network.defaults) and
+# assigns its IPv4 address, gateway and DNS server over IPCP. See the README.
 #
 CONFIG_LWIP_PPP_SUPPORT=y
-CONFIG_LWIP_PPP_SERVER_SUPPORT=y
 CONFIG_LWIP_PPP_ENABLE_IPV6=y
 CONFIG_LWIP_PPP_NOTIFY_PHASE_SUPPORT=y
 CONFIG_LWIP_ENABLE_LCP_ECHO=y
@@ -91,7 +89,6 @@ CONFIG_ESP_COEX_SW_COEXIST_ENABLE=n
 # to BORDER_ROUTING_ENABLE, also TMF_NETDIAG_CLIENT and MESH_DIAG, i.e. the
 # `networkdiagnostic` and `meshdiag` CLI commands.
 #
-CONFIG_OPENTHREAD_DNS64_CLIENT=y
 CONFIG_OPENTHREAD_DNS_CLIENT=y
 CONFIG_OPENTHREAD_SRP_CLIENT=y
 CONFIG_OPENTHREAD_BORDER_AGENT_ENABLE=y
@@ -113,9 +110,12 @@ CONFIG_OPENTHREAD_HEADER_CUSTOM=y
 CONFIG_OPENTHREAD_CUSTOM_HEADER_PATH="main"
 CONFIG_OPENTHREAD_CUSTOM_HEADER_FILE_NAME="esp_ot_custom_config.h"
 
-# Upstream DNS the DNS64 path synthesises into the NAT64 prefix. Only used
-# once a NAT64 prefix exists (esp_openthread_state.c).
-CONFIG_OPENTHREAD_DNS_SERVER_ADDR="8.8.8.8"
+# The DNS64 client is for Thread-only nodes: once a NAT64 prefix exists it
+# overwrites the main DNS server (global in lwIP) with
+# CONFIG_OPENTHREAD_DNS_SERVER_ADDR wrapped in that prefix
+# (esp_openthread_state.c). A border router has real IPv4, and here its DNS
+# server is the one the router hands out over IPCP, so keep it off.
+CONFIG_OPENTHREAD_DNS64_CLIENT=n
 
 #
 # Thread network -- identical dataset to projects/ot_cli and ot_br_eth, so all

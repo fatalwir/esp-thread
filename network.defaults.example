@@ -16,6 +16,12 @@ CONFIG_OPENTHREAD_NETWORK_EXTPANID="1111111122222222"
 CONFIG_OPENTHREAD_NETWORK_MASTERKEY="000102030405060708090a0b0c0d0e0f"
 CONFIG_OPENTHREAD_NETWORK_PSKC="0102030405060708090a0b0c0d0e0f10"
 
-# Upstream DNS server that border routers synthesise into the NAT64 prefix.
-# Typically your LAN router.
+# Upstream DNS server that Thread-only nodes (ot_cli, ot_br_eth) reach
+# through the NAT64 prefix. Typically your LAN router. ot_br_ppp ignores it
+# and uses the DNS server the router hands out over PPP.
 CONFIG_OPENTHREAD_DNS_SERVER_ADDR="8.8.8.8"
+
+# PPP login on the upstream router (ot_br_ppp only). Must match the router's
+# /ppp secret; leave the user empty if the router does not authenticate.
+CONFIG_OT_BR_PPP_USER="esp-ot-br"
+CONFIG_OT_BR_PPP_PASSWORD="change-me"

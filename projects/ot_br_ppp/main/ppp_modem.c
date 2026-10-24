@@ -121,17 +121,33 @@ static void on_ppp_status(void *arg, esp_event_base_t base, int32_t event_id, vo
          * board stays silent from then on. ppp_connect() is only accepted in
          * the DEAD phase, which is where we are now. */
         xEventGroupClearBits(s_ppp_events, PPP_CONNECTED_BIT);
-        ESP_LOGI(TAG, "PPP session ended; offering the link again");
+        ESP_LOGI(TAG, "PPP session ended; dialling again");
         esp_netif_action_start(s_ppp_netif, NULL, 0, NULL);
         break;
     case NETIF_PPP_ERRORPEERDEAD:
         ESP_LOGW(TAG, "PPP peer stopped answering LCP echoes");
         xEventGroupClearBits(s_ppp_events, PPP_CONNECTED_BIT);
         break;
+    case NETIF_PPP_ERRORAUTHFAIL:
+        ESP_LOGE(TAG, "router rejected user \"%s\"; check OT_BR_PPP_USER/PASSWORD", CONFIG_OT_BR_PPP_USER);
+        break;
     default:
         ESP_LOGD(TAG, "PPP event %d", (int)event_id);
         break;
     }
+}
+
+static void on_ppp_got_ip(void *arg, esp_event_base_t base, int32_t event_id, void *data)
+{
+    (void)arg;
+    (void)base;
+    (void)event_id;
+    const ip_event_got_ip_t *event = data;
+    esp_netif_dns_info_t dns = { 0 };
+
+    esp_netif_get_dns_info(s_ppp_netif, ESP_NETIF_DNS_MAIN, &dns);
+    ESP_LOGI(TAG, "router assigned " IPSTR ", gateway " IPSTR ", DNS " IPSTR,
+             IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.gw), IP2STR(&dns.ip.u_addr.ip4));
 }
 
 /* ------------------------------------------------------------------ */
@@ -164,20 +180,17 @@ esp_err_t ppp_modem_start(void)
         .ppp_phase_event_enabled = true,
         .ppp_error_event_enabled = true,
     };
-#ifdef CONFIG_LWIP_PPP_SERVER_SUPPORT
-    /* Addresses we offer over IPCP. IPv6 needs none of this -- IPV6CP only
-     * negotiates interface identifiers -- but NAT64 needs IPv4 on the
-     * backbone, and a v4 pair gives you a second way to reach the board. */
-    esp_netif_str_to_ip4(CONFIG_OT_BR_PPP_LOCAL_IP4, &ppp_cfg.ppp_our_ip4_addr);
-    esp_netif_str_to_ip4(CONFIG_OT_BR_PPP_PEER_IP4, &ppp_cfg.ppp_their_ip4_addr);
-    /* ppp_passive stays false, so esp_netif calls ppp_connect() and we
-     * initiate LCP even though we are the server. Waiting passively is not
-     * enough: MikroTik's ppp-client (null-modem=yes) does not start LCP on
-     * its own, it only answers Configure-Requests arriving while it dials.
-     * When nobody answers, the session ends and on_ppp_status() restarts it,
-     * so we keep offering until a peer shows up. */
-#endif
     ESP_RETURN_ON_ERROR(esp_netif_ppp_set_params(s_ppp_netif, &ppp_cfg), TAG, "ppp_set_params");
+
+    /* We are the PPP client: the upstream router authenticates us and assigns
+     * our IPv4 address, gateway and DNS server over IPCP (esp-netif asks for
+     * the peer's DNS by default). Offer PAP and CHAP and let the router pick. */
+    if (strlen(CONFIG_OT_BR_PPP_USER) > 0) {
+        ESP_RETURN_ON_ERROR(esp_netif_ppp_set_auth(s_ppp_netif,
+                                                   NETIF_PPP_AUTHTYPE_PAP | NETIF_PPP_AUTHTYPE_CHAP,
+                                                   CONFIG_OT_BR_PPP_USER, CONFIG_OT_BR_PPP_PASSWORD),
+                            TAG, "ppp_set_auth");
+    }
 
     esp_netif_driver_ifconfig_t driver_cfg = {
         /* No driver object of our own; the handle only has to be non-NULL. */
@@ -188,19 +201,21 @@ esp_err_t ppp_modem_start(void)
 
     ESP_RETURN_ON_ERROR(esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID,
                                                    on_ppp_status, NULL), TAG, "event register");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_PPP_GOT_IP,
+                                                   on_ppp_got_ip, NULL), TAG, "event register");
 
     /* 3. Start. For a PPP netif esp_netif_action_start() lands in
-     * esp_netif_start_ppp(), which calls ppp_connect() because ppp_passive is
-     * false (see above). We are still the server in the IPCP sense: we hand
-     * out the addresses. lwIP brings the netif up by itself once negotiation
-     * completes, so no esp_netif_action_connected() here. */
+     * esp_netif_start_ppp(), which calls ppp_connect(): we start LCP, the
+     * router answers (MikroTik's serial ppp-server needs no handshake before
+     * LCP). lwIP brings the netif up by itself once negotiation completes, so
+     * no esp_netif_action_connected() here. */
     esp_netif_action_start(s_ppp_netif, NULL, 0, NULL);
 
     BaseType_t ok = xTaskCreate(ppp_rx_task, "ppp_rx", CONFIG_OT_BR_PPP_RX_TASK_STACK,
                                 NULL, CONFIG_OT_BR_PPP_RX_TASK_PRIO, &s_rx_task);
     ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "rx task");
 
-    ESP_LOGI(TAG, "PPP started on USB Serial/JTAG; offering the link until a peer answers");
+    ESP_LOGI(TAG, "PPP started on USB Serial/JTAG; dialling until the router answers");
     return ESP_OK;
 }
 

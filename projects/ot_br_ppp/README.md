@@ -27,34 +27,32 @@ share it and hurts both. A wired backbone avoids that entirely, which is why
 PPP was chosen over Ethernet (W5500) because it needs no extra hardware. The
 tradeoffs are real and documented under "Limitations" below.
 
-## Roles: who dials whom
+## Roles: the router is in charge
 
-This board is the PPP **server** in the IPCP sense: it hands out the IPv4
-pair (`192.168.77.1` for itself, `192.168.77.2` for the peer, see
-`Thread Border Router over PPP → PPP backbone`). The upstream peer is the PPP
-**client** and needs no authentication.
+This board is the PPP **client**. The upstream router runs the PPP **server**
+and decides everything about the link, so the board acts as a plain interface
+between your network and the Thread mesh:
 
-Who *starts* LCP is a separate question. `CONFIG_LWIP_PPP_SERVER_SUPPORT=y` only
-makes `ppp_listen()` available; esp-netif calls it only when
-`esp_netif_ppp_config_t.ppp_passive` is set (`esp_netif_lwip_ppp.c`):
+| What                             | Set by the router through                                     |
+| -------------------------------- | ------------------------------------------------------------- |
+| Access                           | PAP/CHAP login (`/ppp secret` on RouterOS)                     |
+| IPv4 address and gateway         | IPCP (`remote-address` in the PPP profile or secret)           |
+| DNS server                       | IPCP (`dns-server` in the PPP profile)                         |
+| IPv6 prefix for the mesh (OMR)   | DHCPv6-PD (`dhcpv6-pd-pool` in the PPP profile)                |
 
-```c
-    if (ppp_ctx->ppp_passive) {
-        err = ppp_listen(ppp_ctx->ppp);
-    } else {
-        err = ppp_connect(ppp_ctx->ppp, 0);
-    }
-```
+The firmware holds no addresses of its own. The login goes in
+`network.defaults` at the repository root (`CONFIG_OT_BR_PPP_USER`,
+`CONFIG_OT_BR_PPP_PASSWORD`), next to the Thread credentials.
 
-`ppp_modem.c` deliberately leaves it unset, so the board **actively sends LCP
-Configure-Requests**. A purely passive board does not work with MikroTik:
-its `ppp-client` with `null-modem=yes` sends a `CLIENT` handshake and only
-answers LCP that arrives while it dials; it never starts LCP itself.
+DNS queries from mesh nodes go to this board's DNS server, which forwards them
+to the router's. The DNS64 client is off on purpose: it is meant for
+Thread-only nodes and would overwrite the router's DNS server (lwIP keeps one
+global list) with an address inside the NAT64 prefix.
 
-lwIP gives up after ~60 s of unanswered requests, and a session also ends when
-the peer hangs up or reboots. `ppp_modem.c` restarts negotiation every time
-the session reaches the DEAD phase, so the board keeps offering the link
-until a peer answers, and it reconnects by itself after a drop. It also takes
+The board starts LCP itself. lwIP gives up after ~60 s without an answer, and
+a session also ends when the router hangs up or reboots; `ppp_modem.c` dials
+again every time the session reaches the DEAD phase, so the board keeps trying
+until the router answers and reconnects by itself after a drop. It also takes
 the netif down while there is no session, so the border router reports the
 backbone as not running (`ot br infraif`) and withdraws its routes instead of
 advertising into a dead link.
@@ -92,19 +90,47 @@ CDC-ACM driver for it.
 
 ### MikroTik RouterOS
 
-Tested with RouterOS 7.24 (CHR). The board shows up under `/port` as `usb1`
-or similar:
+Tested with RouterOS 7.24 (CHR in VirtualBox, with the board's USB port
+passed through). The board shows up under `/port` as `usb1` or similar:
 
 ```
-/interface ppp-client add name=ppp-thread port=usb1 null-modem=yes \
-    dial-on-demand=no add-default-route=no use-peer-dns=no \
-    user="" password="" disabled=no
+/ip pool add name=thread-ppp ranges=192.168.77.2-192.168.77.14
+/ipv6 pool add name=thread-pd prefix=<your-prefix>/48 prefix-length=64
+/ppp profile add name=thread local-address=192.168.77.1 remote-address=thread-ppp \
+    dns-server=192.168.77.1 dhcpv6-pd-pool=thread-pd
+/ppp secret add name=esp-ot-br password=<password> service=async profile=thread
+/interface ppp-server add name=ppp-thread-in port=usb1 null-modem=yes \
+    authentication=chap,pap profile=thread disabled=no
+/system scheduler add name=thread-ppp-enable start-time=startup \
+    on-event=":delay 15s; /interface ppp-server enable [find name=ppp-thread-in]"
 ```
 
-`null-modem=yes` stops RouterOS sending modem AT commands. With
-`add-default-route=no` and `use-peer-dns=no` the board does not become the
-router's uplink. The link comes up within ~10 s of enabling the client and
-recovers by itself after either side restarts.
+- **Startup script.** RouterOS 7.24 comes back from every reboot with the
+  serial `ppp-server` disabled, nothing logged; most likely the USB port does
+  not exist yet when the configuration is loaded. Without the scheduler entry
+  the link never returns after a router reboot.
+- **Fixed address.** Put `remote-address=` on the `/ppp secret` instead of
+  using a pool.
+- **DNS.** `dns-server=192.168.77.1` points at the router itself, which needs
+  `/ip dns set allow-remote-requests=yes`. Any other resolver works too.
+- **IPv6 prefix.** For a globally routable prefix, take the pool from your
+  ISP's delegation. RouterOS installs the route for the delegated /64 towards
+  the board by itself.
+- **IPv4 to the internet** (NAT64, SNTP) needs your usual masquerade rule to
+  cover the PPP pool, and the firewall must accept DNS from the PPP interface.
+
+Measured on the CHR: the link comes up ~10 s after the server is enabled; the
+board gets its address, gateway and DNS from the profile, syncs SNTP through
+the router, the router delegates a /64 that becomes the mesh's favoured OMR
+prefix, the router reaches mesh addresses in it, and mesh DNS queries are
+forwarded to the router.
+
+**Open issue, seen on the CHR only:** after the board resets (its USB device
+re-enumerates) or the `ppp-server` is disabled and re-enabled, RouterOS
+received nothing more from the port until the router rebooted, although the
+board kept dialling (checked by reading the port directly on the host). This
+may well be the VirtualBox USB passthrough; it needs checking on real
+hardware.
 
 ## Getting a global IPv6 prefix from upstream — SLAAC vs DHCPv6-PD
 
@@ -160,11 +186,13 @@ Upstream defaults for both are `0` — Espressif enables them under
 
 DHCPv6-PD sidesteps the reachability-probe problem entirely, and a delegated
 prefix is exactly what the BR wants in order to publish an OMR prefix to the
-mesh. It also needs only a configuration change on the peer, not on the
-firmware.
+mesh.
 
-**Not yet tested:** DHCPv6-PD over this PPP link. Espressif's PD platform code
-is inside the closed `libopenthread_br.a`.
+Compiled in is not the same as running: the PD client is off at runtime until
+`otBorderRoutingDhcp6PdSetEnabled()` is called, which `esp_ot_br.c` does right
+after border router init. Tested against RouterOS's `dhcpv6-pd-pool`: the
+router delegates a /64, routes it to the board, and the board publishes it as
+the favoured OMR prefix. Check with `ot br pd state` and `ot br omrprefix`.
 
 ### If neither works
 
@@ -177,7 +205,7 @@ you simply have no globally routable prefix from upstream.
 Most IPv6-over-PPP material online is written for the case where the ESP is a
 PPP *client* dialing a carrier through a cellular modem, and talks about PDP
 contexts, APNs and `IPV4V6` context types. None of that applies here: there is
-no modem, and this board is the PPP **server**. The parts that do carry over
+no modem; the router's PPP server takes its place. The parts that do carry over
 are the LCP → IPv6CP sequence and the fact that IPV6CP yields link-local only.
 
 ## NAT64 — what it does and why you want it
@@ -207,18 +235,21 @@ are for — that `8.8.8.8` is synthesised into the NAT64 prefix at runtime
 itself (stateful, with TCP/UDP/ICMP session tables) inside `libopenthread_br.a`.
 
 **Relevance to the PPP design:** NAT64 needs IPv4 connectivity on the backbone,
-which is why `ppp_modem.c` negotiates an IPv4 pair over IPCP even though Thread
-itself is IPv6-only. IPv4 over PPP is the most mature part of PPP.
+which is why the board takes an IPv4 address from the router over IPCP even
+though Thread itself is IPv6-only. IPv4 over PPP is the most mature part of PPP.
 
-Inspect it from the CLI:
+OpenThread's own `nat64` CLI commands are not built, since Espressif uses its
+own translator. Inspect it with:
 
 ```
-ot nat64 state
-ot nat64 cidr            # the IPv4 pool used for translation
-ot nat64 mappings        # active sessions
 ot br nat64prefix
 ot dns resolve4 example.com
 ```
+
+Not yet verified end to end: a mesh node reaching an IPv4 host through this
+board's translator. A ping from the board's own CLI into its NAT64 prefix gets
+no reply, which may only mean the translator does not handle traffic the
+border router originates itself; it needs a second Thread node to test.
 
 This is also the path a node needs to run `esp_https_ota` against an IPv4 HTTP
 server on your LAN.
@@ -280,8 +311,10 @@ most of what the web UI shows.
   multicast mDNS on the backbone. Over a point-to-point PPP link that reaches
   the peer and stops — there is no shared segment behind it, and routers do not
   normally relay it. Routing, RAs, prefix advertisement and NAT64 are
-  unaffected. If service discovery from LAN clients matters to you, that is the
-  argument for the W5500 Ethernet backbone instead.
+  unaffected. RouterOS 7 can repeat mDNS between interfaces
+  (`/ip dns set mdns-repeat-ifaces=...`), which may bridge that gap; untested.
+  Otherwise the W5500 Ethernet backbone is the answer if service discovery
+  from LAN clients matters.
 - **Relies on the prebuilt BR library's view of `struct netif`.**
   `libopenthread_br.a` ships as a binary and reads `netif->flags` and
   `netif->num` at fixed offsets (527 and 530 on this ESP-IDF). It is built

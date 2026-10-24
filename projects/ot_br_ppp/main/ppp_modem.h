@@ -23,12 +23,11 @@ extern "C" {
 
 /**
  * @brief Install the USB Serial/JTAG driver, create the PPP netif and start
- *        listening for a peer.
+ *        dialling the upstream router.
  *
- * ESP-IDF compiles the PPP netif as a *server* whenever
- * CONFIG_LWIP_PPP_SERVER_SUPPORT is set (esp_netif_lwip_ppp.c calls
- * ppp_listen() instead of ppp_connect()), so the upstream router must be
- * configured as the PPP *client*.
+ * This board is the PPP *client*: the router runs the PPP server,
+ * authenticates it and assigns its addresses. The link is redialled for as
+ * long as the board runs, so it recovers from either side restarting.
  *
  * @return ESP_OK on success
  */
