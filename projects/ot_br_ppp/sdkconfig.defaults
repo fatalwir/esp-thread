@@ -50,6 +50,16 @@ CONFIG_LWIP_HOOK_IP6_INPUT_CUSTOM=y
 CONFIG_LWIP_HOOK_IP6_SELECT_SRC_ADDR_CUSTOM=y
 CONFIG_LWIP_IPV6_AUTOCONFIG=y
 
+# struct netif layout must match the prebuilt libopenthread_br.a, which reads
+# netif->flags and netif->num at fixed offsets. That library is built without
+# PPP and has 4 client_data slots; CONFIG_LWIP_PPP_SUPPORT adds a fifth for
+# esp-netif, shifting both fields by 4 bytes. The border router then reads
+# hwaddr_len (0 on PPP) as the interface number and a random bit as "up", and
+# `ot br state` stays "stopped". Dropping DHCP address conflict detection
+# frees one slot (LWIP_ACD). Nothing here uses DHCP: the backbone is PPP.
+# main/esp_ot_br.c checks both offsets at compile time.
+CONFIG_LWIP_DHCP_DOES_NOT_CHECK_OFFERED_IP=y
+
 #
 # OpenThread -- single SoC, native 802.15.4 radio, no RCP
 #

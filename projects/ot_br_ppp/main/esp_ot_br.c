@@ -17,6 +17,7 @@
  *     network keeps running when the upstream router is unplugged.
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -37,6 +38,7 @@
 #include "esp_vfs_eventfd.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lwip/netif.h"
 #include "mdns.h"
 #include "nvs_flash.h"
 #include "ot_examples_common.h"
@@ -51,6 +53,15 @@
 #endif
 
 #define TAG "esp_ot_br_ppp"
+
+/* The prebuilt libopenthread_br.a reads netif->flags and netif->num at fixed
+ * offsets, taken from esp_openthread_infra_if_init() in
+ * lib/esp32c6/libopenthread_br.a (esp-thread-lib b7bc06a). Any config that
+ * changes struct netif ahead of them (PPP adds a client_data slot, for one)
+ * makes the border router silently never start. See sdkconfig.defaults. If
+ * ESP-IDF updates the library, re-check these against its disassembly. */
+_Static_assert(offsetof(struct netif, flags) == 527 && offsetof(struct netif, num) == 530,
+               "struct netif layout no longer matches libopenthread_br.a");
 
 /* ------------------------------------------------------------------ */
 /* Wall-clock time                                                     */

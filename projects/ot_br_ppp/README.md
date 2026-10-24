@@ -282,13 +282,20 @@ most of what the web UI shows.
   normally relay it. Routing, RAs, prefix advertisement and NAT64 are
   unaffected. If service discovery from LAN clients matters to you, that is the
   argument for the W5500 Ethernet backbone instead.
-- **Relies on the prebuilt BR library accepting a PPP netif.**
-  `libopenthread_br.a` ships as a binary. Its symbol table shows only generic
-  lwIP netif APIs (`raw_bind_netif`, `mld6_joingroup_netif`,
-  `netif_get_by_index`) and no Ethernet-specific calls, but whether
-  `esp_openthread_infra_if_init()` makes other assumptions about the netif
-  cannot be seen from outside. If border router init fails, `br_backbone_task`
-  logs the error and leaves the mesh and CLI running so you can inspect it.
+- **Relies on the prebuilt BR library's view of `struct netif`.**
+  `libopenthread_br.a` ships as a binary and reads `netif->flags` and
+  `netif->num` at fixed offsets (527 and 530 on this ESP-IDF). It is built
+  without PPP, with 4 `client_data` slots. `CONFIG_LWIP_PPP_SUPPORT` adds a
+  fifth for esp-netif, which shifts both fields by 4 bytes: the border router
+  then registers interface index 1 (it reads `hwaddr_len`, 0 on PPP), believes
+  the backbone is down, and `ot br state` stays `stopped`, with no error
+  logged. `sdkconfig.defaults` sets
+  `CONFIG_LWIP_DHCP_DOES_NOT_CHECK_OFFERED_IP=y` to drop the ACD slot and
+  restore the layout (nothing on this board uses DHCP), and `esp_ot_br.c` has
+  a `_Static_assert` on both offsets. If an ESP-IDF update changes the
+  library, check `ot br infraif` shows the right index and `is-running:yes`
+  while PPP is up. If border router init fails, `br_backbone_task` logs the
+  error and leaves the mesh and CLI running so you can inspect it.
 
 ## ESP-IDF fix for PPP backbones
 
