@@ -19,6 +19,9 @@
 #ifndef CONFIG_OT_BR_SNTP_SERVER
 #define CONFIG_OT_BR_SNTP_SERVER ""
 #endif
+#ifndef CONFIG_OT_BR_ALLOW_THREAD_DIAG
+#define CONFIG_OT_BR_ALLOW_THREAD_DIAG 0
+#endif
 
 static br_settings_t s_settings;
 
@@ -31,6 +34,7 @@ static void set_defaults(br_settings_t *s)
     strlcpy(s->hostname, CONFIG_OT_BR_MDNS_HOSTNAME, sizeof(s->hostname));
     strlcpy(s->sntp_server, CONFIG_OT_BR_SNTP_SERVER, sizeof(s->sntp_server));
     s->dhcp6_pd = true;
+    s->thread_diag = CONFIG_OT_BR_ALLOW_THREAD_DIAG;
 }
 
 /* Overwrite dst with the stored string, if there is one. */
@@ -60,9 +64,12 @@ esp_err_t br_settings_load(br_settings_t *out)
     load_str(nvs, "web_pass", out->web_password, sizeof(out->web_password));
     load_str(nvs, "hostname", out->hostname, sizeof(out->hostname));
     load_str(nvs, "sntp", out->sntp_server, sizeof(out->sntp_server));
-    uint8_t pd;
-    if (nvs_get_u8(nvs, "dhcp6_pd", &pd) == ESP_OK) {
-        out->dhcp6_pd = pd != 0;
+    uint8_t flag;
+    if (nvs_get_u8(nvs, "dhcp6_pd", &flag) == ESP_OK) {
+        out->dhcp6_pd = flag != 0;
+    }
+    if (nvs_get_u8(nvs, "thread_diag", &flag) == ESP_OK) {
+        out->thread_diag = flag != 0;
     }
 
     nvs_close(nvs);
@@ -89,6 +96,9 @@ esp_err_t br_settings_save(const br_settings_t *in)
     }
     if (err == ESP_OK) {
         err = nvs_set_u8(nvs, "dhcp6_pd", in->dhcp6_pd);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u8(nvs, "thread_diag", in->thread_diag);
     }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);

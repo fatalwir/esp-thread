@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -45,6 +46,13 @@ size_t console_capture_read(uint32_t since, char *buf, size_t len, uint32_t *nex
  * @brief Queue a command line, as typed at the UART console.
  */
 esp_err_t console_capture_exec(const char *line);
+
+/**
+ * @brief Whether both consoles accept OpenThread factory diagnostics
+ *        (`ot diag ...`). `ot diag stop` is always accepted. Takes effect at
+ *        once.
+ */
+void console_capture_set_diag_allowed(bool allowed);
 
 #ifdef __cplusplus
 }

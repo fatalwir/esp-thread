@@ -19,6 +19,15 @@ CONFIG_BOOTLOADER_APP_ROLLBACK=y
 CONFIG_BOOTLOADER_APP_ROLLBACK_CONFIRM_BY_APP=y
 
 #
+# HTTPS for the web interface, next to HTTP. The board creates its key and
+# self-signed certificate on first boot (main/tls_identity.c), which needs
+# X.509 writing. Two servers need more than the default 10 sockets.
+#
+CONFIG_ESP_HTTPS_SERVER_ENABLE=y
+CONFIG_MBEDTLS_X509_CREATE_C=y
+CONFIG_LWIP_MAX_SOCKETS=16
+
+#
 # Console split
 #   "UART" connector -> ROM/bootloader output, ESP_LOG, OpenThread CLI
 #   "USB"  connector -> PPP only

@@ -189,6 +189,7 @@ void app_main(void)
     ot_console_start();
     ot_register_external_commands();
     ESP_ERROR_CHECK(console_capture_start());
+    console_capture_set_diag_allowed(br_settings()->thread_diag);
 #endif
 
     static esp_openthread_config_t config = {

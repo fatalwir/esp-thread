@@ -7,6 +7,7 @@
 
 #include "console_capture.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,7 @@ static char         s_ring[CONFIG_OT_BR_CONSOLE_BUFFER_SIZE];
 static uint32_t     s_total; /* bytes ever written; the ring holds the last ones */
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static QueueHandle_t s_exec_queue;
+static volatile bool s_diag_allowed;
 
 /* Must not print: it runs inside every printf. */
 static void append(const char *data, size_t len)
@@ -122,6 +124,51 @@ int __wrap_putchar(int c)
 
     append(&ch, 1);
     return ret;
+}
+
+/* esp_console_run() is wrapped too: both the UART REPL and the web console
+ * go through it, which makes it the one place to refuse `ot diag`. */
+esp_err_t __real_esp_console_run(const char *cmdline, int *cmd_ret);
+
+static const char *skip_word(const char *p, const char *word)
+{
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    size_t len = strlen(word);
+    if (strncmp(p, word, len) != 0 || (p[len] != '\0' && !isspace((unsigned char)p[len]))) {
+        return NULL;
+    }
+    p += len;
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    return p;
+}
+
+static bool is_blocked_diag(const char *line)
+{
+    const char *p = skip_word(line, CONFIG_OPENTHREAD_CONSOLE_COMMAND_PREFIX);
+    if (p == NULL || (p = skip_word(p, "diag")) == NULL) {
+        return false;
+    }
+    /* Leaving diagnostics mode is always allowed. */
+    return skip_word(p, "stop") == NULL;
+}
+
+esp_err_t __wrap_esp_console_run(const char *cmdline, int *cmd_ret)
+{
+    if (!s_diag_allowed && is_blocked_diag(cmdline)) {
+        printf("Factory diagnostics are disabled; enable them in the web interface (Settings).\n");
+        *cmd_ret = 0;
+        return ESP_OK;
+    }
+    return __real_esp_console_run(cmdline, cmd_ret);
+}
+
+void console_capture_set_diag_allowed(bool allowed)
+{
+    s_diag_allowed = allowed;
 }
 
 /* ------------------------------------------------------------------ */

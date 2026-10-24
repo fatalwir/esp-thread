@@ -92,7 +92,7 @@
 </section>
 
 <section id="tab-settings">
-  <p class="note">Stored on the board and applied after a reboot. The defaults come from the build
+  <p class="note">Stored on the board and applied after a reboot, except where noted. The defaults come from the build
   (network.defaults); a factory reset returns to them.</p>
   <form id="settings-form">
     <label>PPP user<input name="ppp_user"></label>
@@ -100,6 +100,7 @@
     <label>Hostname (mDNS)<input name="hostname"></label>
     <label>SNTP server (empty: off)<input name="sntp_server"></label>
     <label class="row"><input name="dhcp6_pd" type="checkbox"> Ask the router for the mesh prefix (DHCPv6-PD)</label>
+    <label class="row"><input name="thread_diag" type="checkbox"> Allow factory diagnostics (<code>ot diag</code>) on the consoles &mdash; applies at once</label>
     <label>New web password (user "admin")<input name="web_password" type="password" autocomplete="new-password"></label>
     <div class="btns"><button class="act primary" type="submit">Save</button>
       <button class="act" type="button" data-post="/api/reboot" data-confirm="Reboot now?">Reboot</button>
@@ -231,7 +232,7 @@ async function loadSettings() {
     const s = await api('/api/settings');
     const el = $('#settings-form').elements;
     el.ppp_user.value = s.ppp_user; el.hostname.value = s.hostname; el.sntp_server.value = s.sntp_server;
-    el.dhcp6_pd.checked = s.dhcp6_pd;
+    el.dhcp6_pd.checked = s.dhcp6_pd; el.thread_diag.checked = s.thread_diag;
     el.ppp_password.value = ''; el.ppp_password.placeholder = s.ppp_password_set ? 'unchanged' : 'not set';
     el.web_password.value = ''; el.web_password.placeholder = 'unchanged';
     msg('#settings-msg', '');
@@ -243,6 +244,7 @@ $('#settings-form').addEventListener('submit', async e => {
   try {
     await postJson('/api/settings', { ppp_user: el.ppp_user.value, ppp_password: el.ppp_password.value,
       hostname: el.hostname.value, sntp_server: el.sntp_server.value, dhcp6_pd: el.dhcp6_pd.checked,
+      thread_diag: el.thread_diag.checked,
       web_password: el.web_password.value });
     msg('#settings-msg', 'Saved. Reboot to apply.'); loadSettings();
   } catch (err) { msg('#settings-msg', err.message, true); }

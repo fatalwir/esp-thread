@@ -34,6 +34,7 @@
 #include "esp_app_desc.h"
 #include "esp_check.h"
 #include "esp_http_server.h"
+#include "esp_https_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_openthread.h"
@@ -52,6 +53,7 @@
 #include "openthread/thread.h"
 #include "ppp_modem.h"
 #include "sdkconfig.h"
+#include "tls_identity.h"
 
 #define TAG "web_server"
 
@@ -412,6 +414,7 @@ static esp_err_t settings_get(httpd_req_t *req)
     cJSON_AddStringToObject(json, "hostname", s.hostname);
     cJSON_AddStringToObject(json, "sntp_server", s.sntp_server);
     cJSON_AddBoolToObject(json, "dhcp6_pd", s.dhcp6_pd);
+    cJSON_AddBoolToObject(json, "thread_diag", s.thread_diag);
     return send_json(req, json);
 }
 
@@ -456,6 +459,10 @@ static esp_err_t settings_post(httpd_req_t *req)
     if (cJSON_IsBool(pd)) {
         s.dhcp6_pd = cJSON_IsTrue(pd);
     }
+    const cJSON *diag = cJSON_GetObjectItemCaseSensitive(json, "thread_diag");
+    if (cJSON_IsBool(diag)) {
+        s.thread_diag = cJSON_IsTrue(diag);
+    }
     cJSON_Delete(json);
 
     if (!ok) {
@@ -467,6 +474,7 @@ static esp_err_t settings_post(httpd_req_t *req)
     if (br_settings_save(&s) != ESP_OK) {
         return send_error(req, "500 Internal Server Error", "cannot store settings");
     }
+    console_capture_set_diag_allowed(s.thread_diag); /* the one setting that applies at once */
     return settings_get(req);
 }
 
@@ -790,6 +798,66 @@ static esp_err_t factory_reset_post(httpd_req_t *req)
 
 /* ------------------------------------------------------------------ */
 
+static const httpd_uri_t s_uris[] = {
+    {.uri = "/",                  .method = HTTP_GET,  .handler = index_get},
+    {.uri = "/favicon.ico",       .method = HTTP_GET,  .handler = favicon_get},
+    {.uri = "/api/status",        .method = HTTP_GET,  .handler = status_get},
+    {.uri = "/api/settings",      .method = HTTP_GET,  .handler = settings_get},
+    {.uri = "/api/settings",      .method = HTTP_POST, .handler = settings_post},
+    {.uri = "/api/thread",        .method = HTTP_GET,  .handler = thread_get},
+    {.uri = "/api/thread",        .method = HTTP_POST, .handler = thread_post},
+    {.uri = "/api/ota",           .method = HTTP_POST, .handler = ota_post},
+    {.uri = "/api/console",       .method = HTTP_GET,  .handler = console_get},
+    {.uri = "/api/console",       .method = HTTP_POST, .handler = console_post},
+    {.uri = "/api/reboot",        .method = HTTP_POST, .handler = reboot_post},
+    {.uri = "/api/factory-reset", .method = HTTP_POST, .handler = factory_reset_post},
+};
+
+#define NUM_URIS (sizeof(s_uris) / sizeof(s_uris[0]))
+
+static void tune(httpd_config_t *config)
+{
+    config->max_uri_handlers = NUM_URIS;
+    config->max_open_sockets = 3; /* two servers share CONFIG_LWIP_MAX_SOCKETS */
+    config->lru_purge_enable = true;
+    config->recv_wait_timeout = 10;
+}
+
+static esp_err_t register_uris(httpd_handle_t server)
+{
+    for (size_t i = 0; i < NUM_URIS; i++) {
+        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &s_uris[i]), TAG, "register %s", s_uris[i].uri);
+    }
+    return ESP_OK;
+}
+
+#if CONFIG_OT_BR_WEB_HTTPS_PORT
+static esp_err_t start_https(void)
+{
+    /* httpd_ssl_start() keeps pointers to these, so they live for good. */
+    static char *cert_pem, *key_pem;
+
+    ESP_RETURN_ON_ERROR(tls_identity_get(br_settings()->hostname, &cert_pem, &key_pem), TAG, "certificate");
+
+    httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
+    tune(&config.httpd);
+    config.port_secure = CONFIG_OT_BR_WEB_HTTPS_PORT;
+    config.servercert = (const uint8_t *)cert_pem;
+    config.servercert_len = strlen(cert_pem) + 1; /* PEM lengths include the NUL */
+    config.prvtkey_pem = (const uint8_t *)key_pem;
+    config.prvtkey_len = strlen(key_pem) + 1;
+
+    /* It logs every TLS handshake at info level, i.e. every page request. */
+    esp_log_level_set("esp_https_server", ESP_LOG_WARN);
+
+    httpd_handle_t server;
+    ESP_RETURN_ON_ERROR(httpd_ssl_start(&server, &config), TAG, "httpd_ssl_start");
+    ESP_RETURN_ON_ERROR(register_uris(server), TAG, "https handlers");
+    ESP_LOGI(TAG, "web interface on https port %d (self-signed certificate)", CONFIG_OT_BR_WEB_HTTPS_PORT);
+    return ESP_OK;
+}
+#endif
+
 esp_err_t web_server_start(void)
 {
     if (br_settings()->web_password[0] == '\0') {
@@ -800,32 +868,18 @@ esp_err_t web_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = CONFIG_OT_BR_WEB_PORT;
     config.stack_size = 8192;
-    config.max_uri_handlers = 13;
-    config.max_open_sockets = 4;
-    config.lru_purge_enable = true;
-    config.recv_wait_timeout = 10;
+    tune(&config);
 
     httpd_handle_t server;
     ESP_RETURN_ON_ERROR(httpd_start(&server, &config), TAG, "httpd_start");
-
-    const httpd_uri_t uris[] = {
-        {.uri = "/",                  .method = HTTP_GET,  .handler = index_get},
-        {.uri = "/favicon.ico",       .method = HTTP_GET,  .handler = favicon_get},
-        {.uri = "/api/status",        .method = HTTP_GET,  .handler = status_get},
-        {.uri = "/api/settings",      .method = HTTP_GET,  .handler = settings_get},
-        {.uri = "/api/settings",      .method = HTTP_POST, .handler = settings_post},
-        {.uri = "/api/thread",        .method = HTTP_GET,  .handler = thread_get},
-        {.uri = "/api/thread",        .method = HTTP_POST, .handler = thread_post},
-        {.uri = "/api/ota",           .method = HTTP_POST, .handler = ota_post},
-        {.uri = "/api/console",       .method = HTTP_GET,  .handler = console_get},
-        {.uri = "/api/console",       .method = HTTP_POST, .handler = console_post},
-        {.uri = "/api/reboot",        .method = HTTP_POST, .handler = reboot_post},
-        {.uri = "/api/factory-reset", .method = HTTP_POST, .handler = factory_reset_post},
-    };
-    for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
-        ESP_RETURN_ON_ERROR(httpd_register_uri_handler(server, &uris[i]), TAG, "register %s", uris[i].uri);
-    }
-
+    ESP_RETURN_ON_ERROR(register_uris(server), TAG, "http handlers");
     ESP_LOGI(TAG, "web interface on port %d (user \"" WEB_USER "\")", CONFIG_OT_BR_WEB_PORT);
+
+#if CONFIG_OT_BR_WEB_HTTPS_PORT
+    /* Plain HTTP keeps working if TLS cannot start. */
+    if (start_https() != ESP_OK) {
+        ESP_LOGE(TAG, "HTTPS is not available");
+    }
+#endif
     return ESP_OK;
 }

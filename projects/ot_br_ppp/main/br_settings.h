@@ -30,6 +30,7 @@ typedef struct {
     char hostname[BR_SETTINGS_STR_LEN];
     char sntp_server[BR_SETTINGS_STR_LEN];
     bool dhcp6_pd;
+    bool thread_diag; /* applies immediately, see console_capture_set_diag_allowed() */
 } br_settings_t;
 
 /**

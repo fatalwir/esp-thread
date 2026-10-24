@@ -101,6 +101,26 @@ menu "Thread Border Router over PPP"
             default 80
             range 1 65535
 
+        config OT_BR_ALLOW_THREAD_DIAG
+            bool "Allow OpenThread factory diagnostics (ot diag) by default"
+            depends on OPENTHREAD_DIAG
+            default n
+            help
+                Factory diagnostics (`ot diag start`, `ot diag send`, ...)
+                take the radio off the Thread network for RF testing. The
+                code is compiled in (CONFIG_OPENTHREAD_DIAG); this setting,
+                also switchable in the web interface, decides whether the
+                consoles accept the commands. `ot diag stop` always works.
+
+        config OT_BR_WEB_HTTPS_PORT
+            int "HTTPS port (0: no HTTPS)"
+            default 443
+            range 0 65535
+            help
+                The same interface over TLS, with a self-signed certificate
+                the board creates on first boot and keeps in NVS. Plain HTTP
+                stays available on OT_BR_WEB_PORT.
+
         config OT_BR_CONSOLE_BUFFER_SIZE
             int "Console history kept for the web console (bytes)"
             default 16384

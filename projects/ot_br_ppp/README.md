@@ -295,21 +295,23 @@ which is enabled. See the comment in `esp_ot_custom_config.h`.
 
 ## Web interface
 
-An HTTP server on port 80, on every interface: the router reaches it at the
-address it assigned over PPP, the LAN through the router, and the mesh at the
-board's Thread addresses. Log in as `admin` with `CONFIG_OT_BR_WEB_PASSWORD`
-from `network.defaults`; with no password set, the server stays off.
+HTTPS on port 443 and plain HTTP on port 80, on every interface: the router
+reaches it at the address it assigned over PPP, the LAN through the router,
+and the mesh at the board's Thread addresses. Log in as `admin` with
+`CONFIG_OT_BR_WEB_PASSWORD` from `network.defaults`; with no password set,
+both servers stay off.
 
 | Tab      | What it does                                                                    |
 | -------- | ------------------------------------------------------------------------------- |
 | Status   | PPP link and assigned addresses, Thread role and addresses, border router state and prefixes, uptime, heap, clock |
 | Thread   | The active dataset as fields or as TLV hex; applying it makes this node leave and rejoin |
-| Settings | PPP login, hostname, SNTP server, DHCPv6-PD, web password; reboot, factory reset |
+| Settings | PPP login, hostname, SNTP server, DHCPv6-PD, factory diagnostics, web password; reboot, factory reset |
 | Firmware | Running version and slot; upload a new `build/esp_ot_br_ppp.bin`                |
 | Console  | Everything the UART console prints, and a command line (`ot ...`, `help`)       |
 
-Settings are stored in NVS and take effect after a reboot; the values from the
-build are the defaults, and a factory reset (which also forgets the Thread
+Settings are stored in NVS and take effect after a reboot, except the
+factory diagnostics switch, which applies at once; the values from the build
+are the defaults, and a factory reset (which also forgets the Thread
 dataset) returns to them. The Thread tab changes only this node: to move the
 whole network, use `dataset mgmtsetcommand` from the console.
 
@@ -325,11 +327,27 @@ in their own task, as if typed on the UART. Typing on both consoles at the
 same instant is not safe: `esp_console` and the `ot` command are not
 re-entrant.
 
-**Security.** This is plain HTTP with Basic authentication: the password
-crosses the network base64-encoded, not encrypted. The interface shows the
-Thread network key and gives full console access, so only expose it on
-networks you trust, and restrict it on the router (for example, allow port 80
-on the PPP interface only from your admin machine).
+**HTTPS.** On first boot the board creates an ECDSA P-256 key and a
+self-signed certificate for `<hostname>` and `<hostname>.local`, valid until
+2049 (`main/tls_identity.c`), and keeps both in NVS. Nothing secret is in the
+repository or the firmware image, the certificate survives reboots, updates
+and factory resets, and the browser warning only needs accepting once.
+`CONFIG_OT_BR_WEB_HTTPS_PORT=0` turns HTTPS off; HTTP stays up if TLS fails
+to start. A TLS handshake takes about 1.5 s when the page is reached
+through the mesh.
+
+**Factory diagnostics.** `CONFIG_OPENTHREAD_DIAG` is a build-time switch in
+OpenThread, so the code stays compiled in. Whether the consoles accept
+`ot diag ...` is a setting (default off, `CONFIG_OT_BR_ALLOW_THREAD_DIAG`):
+`esp_console_run()` is wrapped at link time, which covers both the UART and
+the web console. `ot diag stop` is always accepted, so a board can always
+leave diagnostics mode.
+
+**Security.** Use HTTPS: over plain HTTP the Basic-auth password crosses the
+network base64-encoded, not encrypted. The interface shows the Thread network
+key and gives full console access, so restrict it on the router as well (for
+example, allow ports 80 and 443 on the PPP interface only from your admin
+machine), and consider `CONFIG_OT_BR_WEB_PORT` only for networks you trust.
 
 ## Firmware updates (OTA)
 
