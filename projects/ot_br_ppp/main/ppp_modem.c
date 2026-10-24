@@ -30,6 +30,9 @@
 static esp_netif_t     *s_ppp_netif;
 static EventGroupHandle_t s_ppp_events;
 static TaskHandle_t     s_rx_task;
+/* lwIP keeps pointers to these rather than copies. */
+static char             s_user[64];
+static char             s_password[64];
 
 /* ------------------------------------------------------------------ */
 /* esp_netif IO driver: TX towards the wire                            */
@@ -129,7 +132,7 @@ static void on_ppp_status(void *arg, esp_event_base_t base, int32_t event_id, vo
         xEventGroupClearBits(s_ppp_events, PPP_CONNECTED_BIT);
         break;
     case NETIF_PPP_ERRORAUTHFAIL:
-        ESP_LOGE(TAG, "router rejected user \"%s\"; check OT_BR_PPP_USER/PASSWORD", CONFIG_OT_BR_PPP_USER);
+        ESP_LOGE(TAG, "router rejected user \"%s\"; check the PPP login", s_user);
         break;
     default:
         ESP_LOGD(TAG, "PPP event %d", (int)event_id);
@@ -154,7 +157,7 @@ static void on_ppp_got_ip(void *arg, esp_event_base_t base, int32_t event_id, vo
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
-esp_err_t ppp_modem_start(void)
+esp_err_t ppp_modem_start(const char *user, const char *password)
 {
     ESP_RETURN_ON_FALSE(s_ppp_netif == NULL, ESP_ERR_INVALID_STATE, TAG, "already started");
 
@@ -185,10 +188,12 @@ esp_err_t ppp_modem_start(void)
     /* We are the PPP client: the upstream router authenticates us and assigns
      * our IPv4 address, gateway and DNS server over IPCP (esp-netif asks for
      * the peer's DNS by default). Offer PAP and CHAP and let the router pick. */
-    if (strlen(CONFIG_OT_BR_PPP_USER) > 0) {
+    if (user != NULL && user[0] != '\0') {
+        strlcpy(s_user, user, sizeof(s_user));
+        strlcpy(s_password, password, sizeof(s_password));
         ESP_RETURN_ON_ERROR(esp_netif_ppp_set_auth(s_ppp_netif,
                                                    NETIF_PPP_AUTHTYPE_PAP | NETIF_PPP_AUTHTYPE_CHAP,
-                                                   CONFIG_OT_BR_PPP_USER, CONFIG_OT_BR_PPP_PASSWORD),
+                                                   s_user, s_password),
                             TAG, "ppp_set_auth");
     }
 
@@ -227,6 +232,11 @@ esp_err_t ppp_modem_wait_connected(uint32_t timeout_ms)
     EventBits_t bits = xEventGroupWaitBits(s_ppp_events, PPP_CONNECTED_BIT, pdFALSE, pdTRUE, ticks);
 
     return (bits & PPP_CONNECTED_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+bool ppp_modem_is_connected(void)
+{
+    return s_ppp_events != NULL && (xEventGroupGetBits(s_ppp_events) & PPP_CONNECTED_BIT);
 }
 
 esp_netif_t *ppp_modem_get_netif(void)

@@ -81,4 +81,35 @@ menu "Thread Border Router over PPP"
 
     endmenu
 
+    menu "Web interface"
+
+        config OT_BR_WEB_PASSWORD
+            string "Initial password for the web interface"
+            default ""
+            help
+                The web interface (status, settings, Thread dataset, firmware
+                update, console) asks for user "admin" and this password. It
+                can be changed from the interface itself; the new one is kept
+                in NVS and survives firmware updates.
+
+                Leave empty to keep the web interface off. Set it in
+                network.defaults at the repository root rather than here, so
+                it stays out of git.
+
+        config OT_BR_WEB_PORT
+            int "HTTP port"
+            default 80
+            range 1 65535
+
+        config OT_BR_CONSOLE_BUFFER_SIZE
+            int "Console history kept for the web console (bytes)"
+            default 16384
+            range 2048 65536
+            help
+                Everything printed to the UART console (logs, command output)
+                is also kept in a ring buffer of this size, which the web
+                console reads from.
+
+    endmenu
+
 endmenu

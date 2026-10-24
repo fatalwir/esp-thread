@@ -42,7 +42,8 @@ between your network and the Thread mesh:
 
 The firmware holds no addresses of its own. The login goes in
 `network.defaults` at the repository root (`CONFIG_OT_BR_PPP_USER`,
-`CONFIG_OT_BR_PPP_PASSWORD`), next to the Thread credentials.
+`CONFIG_OT_BR_PPP_PASSWORD`), next to the Thread credentials, and can be
+changed later in the web interface.
 
 DNS queries from mesh nodes go to this board's DNS server, which forwards them
 to the router's. The DNS64 client is off on purpose: it is meant for
@@ -68,7 +69,9 @@ idf.py set-target esp32c6      # only once
 idf.py -p <PORT> build flash monitor
 ```
 
-Flash over the **UART** port.
+Flash over the **UART** port. That is only needed once: after that, updates go
+through the web interface (see below). The first flash after changing
+`partitions.csv` or bootloader options must be a full serial flash, as above.
 
 The Thread dataset matches `projects/ot_cli`, so this board joins the same mesh.
 As an FTD it can be promoted to Router later; it only becomes Leader if it is
@@ -259,9 +262,10 @@ server on your LAN.
 Two independent mechanisms; they solve different problems.
 
 **1. SNTP on the border router** (enabled, `CONFIG_OT_BR_SNTP_ENABLE=y`).
-Starts once PPP is up and gives *this board* real wall-clock time. Configure
-the server under `Thread Border Router over PPP → Services`. If DNS is not
-working yet, put a literal IP there.
+Starts once PPP is up and gives *this board* real wall-clock time. Set the
+server in the web interface (Settings), or its default under
+`Thread Border Router over PPP → Services`. If DNS is not working yet, put a
+literal IP there; leaving it empty turns SNTP off.
 
 **2. Time on the mesh nodes** — pick one:
 
@@ -289,21 +293,67 @@ Deliberately off: OpenThread's own TCP stack. That is a separate implementation
 from lwIP's; sockets, `esp_http_client` and `esp_https_ota` all use lwIP's TCP,
 which is enabled. See the comment in `esp_ot_custom_config.h`.
 
-## Web UI — not included
+## Web interface
 
-The border router web GUI lives in the
-[esp-thread-br](https://github.com/espressif/esp-thread-br) repository as an
-in-tree component. It is **not published to the ESP component registry**, so it
-cannot be pulled in via `idf_component.yml` the way `mdns` is. Adding it means
-cloning that repo and referencing the component by path.
+An HTTP server on port 80, on every interface: the router reaches it at the
+address it assigned over PPP, the LAN through the router, and the mesh at the
+board's Thread addresses. Log in as `admin` with `CONFIG_OT_BR_WEB_PASSWORD`
+from `network.defaults`; with no password set, the server stays off.
 
-It should be compatible with this design — it serves HTTP over TCP unicast,
-which routes fine over PPP — but it was not wired up here because it is a
-separate integration with its own dependencies. The 3 MB app partition leaves
-room for it.
+| Tab      | What it does                                                                    |
+| -------- | ------------------------------------------------------------------------------- |
+| Status   | PPP link and assigned addresses, Thread role and addresses, border router state and prefixes, uptime, heap, clock |
+| Thread   | The active dataset as fields or as TLV hex; applying it makes this node leave and rejoin |
+| Settings | PPP login, hostname, SNTP server, DHCPv6-PD, web password; reboot, factory reset |
+| Firmware | Running version and slot; upload a new `build/esp_ot_br_ppp.bin`                |
+| Console  | Everything the UART console prints, and a command line (`ot ...`, `help`)       |
 
-Until then, `meshdiag topology` and `networkdiagnostic get` from the CLI cover
-most of what the web UI shows.
+Settings are stored in NVS and take effect after a reboot; the values from the
+build are the defaults, and a factory reset (which also forgets the Thread
+dataset) returns to them. The Thread tab changes only this node: to move the
+whole network, use `dataset mgmtsetcommand` from the console.
+
+The page is `main/web/index.html`, embedded in the firmware; it talks to a
+small JSON API under `/api/` (listed at the top of `main/web_server.c`), which
+also works with `curl -u admin:<password>`.
+
+**How the console works.** `printf`, `vprintf`, `puts` and `putchar` are
+wrapped at link time (`main/CMakeLists.txt`), so ESP-IDF logs, OpenThread CLI
+output and console command output reach both the UART and a 16 KB ring buffer
+that the page polls. Commands from the page run through `esp_console_run()`
+in their own task, as if typed on the UART. Typing on both consoles at the
+same instant is not safe: `esp_console` and the `ot` command are not
+re-entrant.
+
+**Security.** This is plain HTTP with Basic authentication: the password
+crosses the network base64-encoded, not encrypted. The interface shows the
+Thread network key and gives full console access, so only expose it on
+networks you trust, and restrict it on the router (for example, allow port 80
+on the PPP interface only from your admin machine).
+
+## Firmware updates (OTA)
+
+The flash holds two app slots (`ota_0`, `ota_1`, 1.875 MB each, see
+`partitions.csv`); an upload goes to the one not running, and the board
+reboots into it. A full image takes about 15 s over PPP.
+
+A new image runs on probation (`CONFIG_BOOTLOADER_APP_ROLLBACK_CONFIRM_BY_APP`).
+`esp_ot_br.c` confirms it once the PPP link to the router is up and the border
+router is running; the log says `firmware in ota_N confirmed`. If the board
+resets before that (a crash, or a firmware that cannot reach the router), the
+bootloader boots the previous image again. Settings and the Thread dataset
+are in NVS and survive updates. Images that are not firmware for this chip are
+refused before anything is switched.
+
+Tested on the CHR: an update to each slot, confirmation after the link came
+up, and the rollback when the board was reset before confirmation.
+
+From a shell:
+
+```sh
+curl -u admin:<password> -H 'Content-Type: application/octet-stream' \
+     --data-binary @build/esp_ot_br_ppp.bin http://<board-address>/api/ota
+```
 
 ## Limitations
 

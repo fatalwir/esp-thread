@@ -25,3 +25,7 @@ CONFIG_OPENTHREAD_DNS_SERVER_ADDR="8.8.8.8"
 # /ppp secret; leave the user empty if the router does not authenticate.
 CONFIG_OT_BR_PPP_USER="esp-ot-br"
 CONFIG_OT_BR_PPP_PASSWORD="change-me"
+
+# Web interface login: user "admin" (ot_br_ppp only). Empty keeps the web
+# interface off. Can be changed later from the interface itself.
+CONFIG_OT_BR_WEB_PASSWORD=""

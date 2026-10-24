@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thread Border Router</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d2330; --muted:#667085; --line:#e3e6eb; --accent:#2f6fed; --bad:#c4321c; --ok:#18794e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171c; --card:#1c2027; --fg:#e6e8eb; --muted:#9aa3b2; --line:#2c323c; --accent:#6c9cff; --bad:#ff6b57; --ok:#4cc38a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header span { color:var(--muted); font-size:13px; }
+  nav { display:flex; gap:4px; padding:8px 12px; border-bottom:1px solid var(--line); overflow-x:auto; }
+  nav button { background:none; border:0; color:var(--muted); padding:6px 10px; border-radius:6px; font:inherit; cursor:pointer; }
+  nav button.on { background:var(--card); color:var(--fg); box-shadow:0 0 0 1px var(--line); }
+  main { max-width:960px; margin:0 auto; padding:16px; }
+  section { display:none; }
+  section.on { display:block; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card h2 { font-size:14px; margin:0 0 8px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.03em; }
+  dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 12px; margin:0; }
+  dt { color:var(--muted); }
+  dd { margin:0; word-break:break-all; font-variant-numeric:tabular-nums; }
+  dd.mono { font-family:ui-monospace, monospace; font-size:13px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  form { display:grid; gap:10px; max-width:560px; }
+  label { display:grid; gap:4px; font-size:13px; color:var(--muted); }
+  label.row { grid-template-columns:auto 1fr; align-items:center; }
+  input, textarea { font:inherit; color:var(--fg); background:var(--card); border:1px solid var(--line); border-radius:6px; padding:7px 9px; width:100%; }
+  textarea { font-family:ui-monospace, monospace; font-size:13px; min-height:70px; }
+  input[type=checkbox] { width:auto; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; }
+  button.act { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); padding:7px 14px; border-radius:6px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--bad); }
+  .note { color:var(--muted); font-size:13px; margin:4px 0 12px; }
+  .msg { min-height:1.4em; font-size:14px; }
+  #console-out { background:#0d1015; color:#d6dbe3; font:12.5px/1.4 ui-monospace, monospace; padding:10px; border-radius:8px; height:60vh; overflow:auto; white-space:pre-wrap; word-break:break-all; margin:0 0 8px; }
+  #console-form { display:flex; gap:8px; max-width:none; }
+  #console-form input { font-family:ui-monospace, monospace; }
+  progress { width:100%; max-width:560px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Thread Border Router</h1>
+  <span id="hdr"></span>
+</header>
+<nav id="tabs">
+  <button data-tab="status" class="on">Status</button>
+  <button data-tab="thread">Thread</button>
+  <button data-tab="settings">Settings</button>
+  <button data-tab="firmware">Firmware</button>
+  <button data-tab="console">Console</button>
+</nav>
+<main>
+
+<section id="tab-status" class="on">
+  <div class="grid">
+    <div class="card"><h2>Uplink (PPP)</h2><dl id="st-ppp"></dl></div>
+    <div class="card"><h2>Thread</h2><dl id="st-thread"></dl></div>
+    <div class="card"><h2>Border router</h2><dl id="st-br"></dl></div>
+    <div class="card"><h2>System</h2><dl id="st-sys"></dl></div>
+    <div class="card"><h2>Thread addresses</h2><dl id="st-addr"></dl></div>
+  </div>
+</section>
+
+<section id="tab-thread">
+  <p class="note">This node's active Thread dataset. Saving makes this node leave its
+  network and join the one described here; other nodes are not changed.
+  To join an existing network, paste the hex from <code>ot dataset active -x</code> on
+  one of its border routers into "Dataset TLVs" and use "Apply TLVs".</p>
+  <form id="thread-form">
+    <label>Network name<input name="network_name" maxlength="16"></label>
+    <label>Channel<input name="channel" type="number" min="11" max="26"></label>
+    <label>PAN ID<input name="pan_id" placeholder="0x1234"></label>
+    <label>Extended PAN ID<input name="ext_pan_id" placeholder="16 hex digits"></label>
+    <label>Network key<input name="network_key" placeholder="32 hex digits" autocomplete="off"></label>
+    <label>PSKc<input name="pskc" placeholder="32 hex digits" autocomplete="off"></label>
+    <label>Mesh-local prefix<input name="mesh_local_prefix" placeholder="16 hex digits"></label>
+    <div class="btns"><button class="act primary" type="submit">Apply fields</button>
+      <button class="act" type="button" id="thread-reload">Reload</button></div>
+    <label>Dataset TLVs (hex, the whole dataset at once)<textarea name="tlvs"></textarea></label>
+    <div class="btns"><button class="act primary" type="button" id="thread-tlvs">Apply TLVs</button></div>
+    <div class="msg" id="thread-msg"></div>
+  </form>
+</section>
+
+<section id="tab-settings">
+  <p class="note">Stored on the board and applied after a reboot. The defaults come from the build
+  (network.defaults); a factory reset returns to them.</p>
+  <form id="settings-form">
+    <label>PPP user<input name="ppp_user"></label>
+    <label>PPP password<input name="ppp_password" type="password" autocomplete="new-password"></label>
+    <label>Hostname (mDNS)<input name="hostname"></label>
+    <label>SNTP server (empty: off)<input name="sntp_server"></label>
+    <label class="row"><input name="dhcp6_pd" type="checkbox"> Ask the router for the mesh prefix (DHCPv6-PD)</label>
+    <label>New web password (user "admin")<input name="web_password" type="password" autocomplete="new-password"></label>
+    <div class="btns"><button class="act primary" type="submit">Save</button>
+      <button class="act" type="button" data-post="/api/reboot" data-confirm="Reboot now?">Reboot</button>
+      <button class="act danger" type="button" data-post="/api/factory-reset"
+        data-confirm="Forget all settings and the Thread dataset, then reboot?">Factory reset</button></div>
+    <div class="msg" id="settings-msg"></div>
+  </form>
+</section>
+
+<section id="tab-firmware">
+  <div class="card" style="max-width:560px"><h2>Running</h2><dl id="fw-info"></dl></div>
+  <p class="note">Upload a <code>build/esp_ot_br_ppp.bin</code>. The board reboots into it and
+  keeps it once the PPP link to the router comes up; if it resets before that,
+  it goes back to the current firmware.</p>
+  <form id="ota-form">
+    <input name="file" type="file" accept=".bin">
+    <progress id="ota-progress" value="0" max="1" hidden></progress>
+    <div class="btns"><button class="act primary" type="submit">Upload and reboot</button></div>
+    <div class="msg" id="ota-msg"></div>
+  </form>
+</section>
+
+<section id="tab-console">
+  <pre id="console-out"></pre>
+  <form id="console-form" autocomplete="off">
+    <input name="line" placeholder="ot state, ot br omrprefix, help ..." spellcheck="false">
+    <button class="act primary" type="submit">Run</button>
+  </form>
+</section>
+
+</main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = v => String(v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (r.status === 204) return null;
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch (e) { body = { error: text }; }
+  if (!r.ok) throw new Error((body && body.error) || r.statusText);
+  return body;
+}
+const postJson = (path, obj) => api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+function msg(id, text, bad) { const el = $(id); el.textContent = text; el.className = 'msg ' + (bad ? 'bad' : 'ok'); }
+
+function dl(id, rows) {
+  $(id).innerHTML = rows.filter(r => r[1] !== undefined && r[1] !== null)
+    .map(([k, v, cls]) => `<dt>${esc(k)}</dt><dd class="${cls || ''}">${esc(v)}</dd>`).join('');
+}
+const yes = (b, t = 'up', f = 'down') => [b ? t : f, b ? 'ok' : 'bad'];
+function dur(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + 'd ' : '') + (h ? h + 'h ' : '') + m + 'm ' + (s % 60) + 's'; }
+
+/* ---- tabs (the URL hash names the open tab, so tabs can be bookmarked) ---- */
+let current = 'status';
+function showTab(tab) {
+  if (!$(`nav button[data-tab="${tab}"]`)) tab = 'status';
+  current = tab;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === 'tab-' + tab));
+  if (tab === 'thread') loadThread();
+  if (tab === 'settings') loadSettings();
+  if (tab === 'console') { pollConsole(); $('#console-form input').focus(); }
+}
+$('#tabs').addEventListener('click', e => { if (e.target.dataset.tab) location.hash = e.target.dataset.tab; });
+window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+
+/* ---- status ---- */
+async function loadStatus() {
+  try {
+    const s = await api('/api/status');
+    const p = s.ppp || {}, t = s.thread || {}, b = s.border_router || {}, y = s.system || {}, f = s.firmware || {};
+    const [pv, pc] = yes(p.up);
+    dl('#st-ppp', [['Link', pv, pc], ['Address', p.ip], ['Gateway', p.gateway], ['DNS', p.dns]]);
+    dl('#st-thread', [['Role', t.role, t.role === 'disabled' || t.role === 'detached' ? 'bad' : 'ok'],
+      ['Network', t.network_name], ['Channel', t.channel], ['PAN ID', t.pan_id], ['Ext PAN ID', t.ext_pan_id],
+      ['RLOC16', t.rloc16], ['Partition', t.partition_id]]);
+    dl('#st-br', [['State', b.state, b.state === 'running' ? 'ok' : 'bad'],
+      ['Backbone', b.backbone_running === undefined ? undefined : (b.backbone_running ? 'running' : 'not running'), b.backbone_running ? 'ok' : 'bad'],
+      ['DHCPv6-PD', b.dhcp6_pd], ['OMR prefix', b.omr_prefix, 'mono'], ['On-link prefix', b.on_link_prefix, 'mono'],
+      ['NAT64 prefix', b.nat64_prefix, 'mono']]);
+    dl('#st-sys', [['Uptime', y.uptime_s !== undefined ? dur(y.uptime_s) : undefined], ['Time', y.time],
+      ['Free heap', y.free_heap], ['Min free heap', y.min_free_heap]]);
+    dl('#st-addr', (t.addresses || []).map((a, i) => [i === 0 ? 'Addresses' : '', a, 'mono']));
+    const fwRows = [['Version', f.version], ['Build', f.elf_sha256, 'mono'], ['Built', f.built], ['ESP-IDF', f.idf],
+      ['Partition', f.partition],
+      ['State', f.state, f.state === 'valid' || f.state === 'undefined' ? '' : 'bad']];
+    dl('#fw-info', fwRows);
+    $('#hdr').textContent = `${t.network_name || ''} · ${t.role || ''} · ${p.up ? p.ip : 'PPP down'} · fw ${f.version || ''}`;
+  } catch (e) { $('#hdr').textContent = 'unreachable: ' + e.message; }
+}
+setInterval(() => { if (current === 'status' || current === 'firmware') loadStatus(); }, 5000);
+loadStatus();
+
+/* ---- thread ---- */
+async function loadThread() {
+  try {
+    const d = await api('/api/thread');
+    const form = $('#thread-form');
+    for (const k of ['network_name', 'channel', 'pan_id', 'ext_pan_id', 'network_key', 'pskc', 'mesh_local_prefix', 'tlvs'])
+      form.elements[k].value = d[k] !== undefined ? d[k] : '';
+    msg('#thread-msg', d.commissioned ? '' : 'No active dataset yet.', !d.commissioned);
+  } catch (e) { msg('#thread-msg', e.message, true); }
+}
+$('#thread-reload').addEventListener('click', loadThread);
+async function applyDataset(body) {
+  if (!confirm('Apply this dataset? The node leaves its current network.')) return;
+  try { await postJson('/api/thread', body); msg('#thread-msg', 'Applied; the node is rejoining.'); loadThread(); }
+  catch (err) { msg('#thread-msg', err.message, true); }
+}
+$('#thread-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const el = e.target.elements;
+  applyDataset({ network_name: el.network_name.value, channel: Number(el.channel.value), pan_id: el.pan_id.value,
+    ext_pan_id: el.ext_pan_id.value, network_key: el.network_key.value, pskc: el.pskc.value,
+    mesh_local_prefix: el.mesh_local_prefix.value });
+});
+$('#thread-tlvs').addEventListener('click', () => {
+  const tlvs = $('#thread-form').elements.tlvs.value.trim();
+  if (!tlvs) { msg('#thread-msg', 'Paste the dataset hex first.', true); return; }
+  applyDataset({ tlvs });
+});
+
+/* ---- settings ---- */
+async function loadSettings() {
+  try {
+    const s = await api('/api/settings');
+    const el = $('#settings-form').elements;
+    el.ppp_user.value = s.ppp_user; el.hostname.value = s.hostname; el.sntp_server.value = s.sntp_server;
+    el.dhcp6_pd.checked = s.dhcp6_pd;
+    el.ppp_password.value = ''; el.ppp_password.placeholder = s.ppp_password_set ? 'unchanged' : 'not set';
+    el.web_password.value = ''; el.web_password.placeholder = 'unchanged';
+    msg('#settings-msg', '');
+  } catch (e) { msg('#settings-msg', e.message, true); }
+}
+$('#settings-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const el = e.target.elements;
+  try {
+    await postJson('/api/settings', { ppp_user: el.ppp_user.value, ppp_password: el.ppp_password.value,
+      hostname: el.hostname.value, sntp_server: el.sntp_server.value, dhcp6_pd: el.dhcp6_pd.checked,
+      web_password: el.web_password.value });
+    msg('#settings-msg', 'Saved. Reboot to apply.'); loadSettings();
+  } catch (err) { msg('#settings-msg', err.message, true); }
+});
+document.querySelectorAll('[data-post]').forEach(b => b.addEventListener('click', async () => {
+  if (!confirm(b.dataset.confirm)) return;
+  try { await api(b.dataset.post, { method: 'POST' }); msg('#settings-msg', 'Rebooting...'); }
+  catch (e) { msg('#settings-msg', e.message, true); }
+}));
+
+/* ---- firmware ---- */
+$('#ota-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const file = e.target.elements.file.files[0];
+  if (!file) { msg('#ota-msg', 'Choose a .bin file first.', true); return; }
+  const bar = $('#ota-progress'); bar.hidden = false; bar.value = 0;
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/ota');
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.upload.onprogress = ev => { if (ev.lengthComputable) bar.value = ev.loaded / ev.total; };
+  xhr.onload = () => {
+    let r = {}; try { r = JSON.parse(xhr.responseText); } catch (err) {}
+    if (xhr.status === 200) msg('#ota-msg', `Written to ${r.partition}; rebooting. Reload this page in ~20 s.`);
+    else msg('#ota-msg', r.error || xhr.statusText, true);
+  };
+  xhr.onerror = () => msg('#ota-msg', 'Upload failed.', true);
+  msg('#ota-msg', `Uploading ${file.name} (${file.size} bytes)...`);
+  xhr.send(file);
+});
+
+/* ---- console ---- */
+let since = 0, polling = false;
+const out = $('#console-out');
+async function pollConsole() {
+  if (polling) return; polling = true;
+  try {
+    for (;;) {
+      const r = await api('/api/console?since=' + since);
+      const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 20;
+      if (r.data) {
+        out.textContent += r.data.replace(/\x1b\[[0-9;]*m/g, '');
+        if (out.textContent.length > 200000) out.textContent = out.textContent.slice(-150000);
+        if (atBottom) out.scrollTop = out.scrollHeight;
+      }
+      since = r.next;
+      if (!r.data || r.data.length < 4096) break;
+    }
+  } catch (e) {}
+  polling = false;
+}
+setInterval(() => { if (current === 'console') pollConsole(); }, 700);
+const history = []; let hpos = 0;
+$('#console-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const input = e.target.elements.line, line = input.value.trim();
+  if (!line) return;
+  history.push(line); hpos = history.length; input.value = '';
+  try { await api('/api/console', { method: 'POST', body: line }); } catch (err) { out.textContent += 'error: ' + err.message + '\n'; }
+  setTimeout(pollConsole, 200);
+});
+showTab(location.hash.slice(1));
+$('#console-form input').addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' && hpos > 0) { e.target.value = history[--hpos]; e.preventDefault(); }
+  if (e.key === 'ArrowDown') { hpos = Math.min(hpos + 1, history.length); e.target.value = history[hpos] || ''; e.preventDefault(); }
+});
+</script>
+</body>
+</html>

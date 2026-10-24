@@ -10,6 +10,15 @@ CONFIG_PARTITION_TABLE_OFFSET=0x8000
 CONFIG_PARTITION_TABLE_MD5=y
 
 #
+# OTA updates from the web interface, with rollback. A new image runs on
+# probation until esp_ot_br.c confirms it, which it does once the PPP link to
+# the router is up. If the board resets before that, the bootloader boots the
+# previous image again.
+#
+CONFIG_BOOTLOADER_APP_ROLLBACK=y
+CONFIG_BOOTLOADER_APP_ROLLBACK_CONFIRM_BY_APP=y
+
+#
 # Console split
 #   "UART" connector -> ROM/bootloader output, ESP_LOG, OpenThread CLI
 #   "USB"  connector -> PPP only

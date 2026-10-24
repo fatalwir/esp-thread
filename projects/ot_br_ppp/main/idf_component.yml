@@ -8,6 +8,8 @@
 ##   - esp-qa/coexist-cmd        (Wi-Fi/802.15.4 coexistence, not used here --
 ##                                the radio has the RF path to itself)
 dependencies:
+  # cJSON for the web interface's API; no longer bundled with ESP-IDF.
+  espressif/cjson: "^1.7.19"
   espressif/esp_ot_cli_extension:
     version: "~2.0.0"
   espressif/mdns: "^1.0.3"

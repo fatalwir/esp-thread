@@ -35,6 +35,7 @@
 #include "esp_openthread_netif_glue.h"
 #include "esp_openthread_types.h"
 #include "esp_ot_config.h"
+#include "esp_ota_ops.h"
 #include "esp_vfs_eventfd.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -44,6 +45,9 @@
 #include "openthread/border_routing.h"
 #include "ot_examples_common.h"
 #include "ppp_modem.h"
+#include "br_settings.h"
+#include "console_capture.h"
+#include "web_server.h"
 
 #if CONFIG_OPENTHREAD_CLI_ESP_EXTENSION
 #include "esp_ot_cli_extension.h"
@@ -75,7 +79,10 @@ static void start_sntp(void)
      * forwarding. Thread nodes on the mesh can either run their own SNTP
      * client through this border router, or take network time from the mesh
      * itself when CONFIG_OPENTHREAD_TIME_SYNC is enabled on every node. */
-    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_OT_BR_SNTP_SERVER);
+    if (br_settings()->sntp_server[0] == '\0') {
+        return;
+    }
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(br_settings()->sntp_server);
     config.start = true;
     config.server_from_dhcp = false;
 
@@ -104,7 +111,7 @@ static void br_backbone_task(void *ctx)
 {
     (void)ctx;
 
-    ESP_ERROR_CHECK(ppp_modem_start());
+    ESP_ERROR_CHECK(ppp_modem_start(br_settings()->ppp_user, br_settings()->ppp_password));
 
     /* Block until the upstream router has answered. Without a backbone
      * there is nothing for the border routing logic to attach to. */
@@ -114,7 +121,7 @@ static void br_backbone_task(void *ctx)
     esp_openthread_lock_acquire(portMAX_DELAY);
     esp_openthread_set_backbone_netif(ppp_modem_get_netif());
     esp_err_t err = esp_openthread_border_router_init();
-    if (err == ESP_OK) {
+    if (err == ESP_OK && br_settings()->dhcp6_pd) {
         /* Ask the router to delegate the mesh's prefix (DHCPv6-PD), so the
          * router decides the addressing on the Thread side too. Without a
          * delegation the border router falls back to its own ULA prefix. */
@@ -133,6 +140,17 @@ static void br_backbone_task(void *ctx)
     }
 
     ESP_LOGI(TAG, "border router active on the PPP backbone");
+
+    /* After an OTA update the new firmware runs on probation: if the board
+     * resets before this point, the bootloader goes back to the previous
+     * one. Reaching the router over PPP is the test, because that is the
+     * path the next update has to come through. */
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if (esp_ota_get_state_partition(running, &state) == ESP_OK && state == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_ota_mark_app_valid_cancel_rollback();
+        ESP_LOGI(TAG, "firmware in %s confirmed", running->label);
+    }
 
 #if CONFIG_OT_BR_SNTP_ENABLE
     start_sntp();
@@ -156,6 +174,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_vfs_eventfd_register(&eventfd_config));
     ESP_ERROR_CHECK(nvs_flash_init());
+    ESP_ERROR_CHECK(br_settings_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -164,11 +183,12 @@ void app_main(void)
      * PPP link those announcements reach the upstream router and stop there:
      * there is no shared segment behind it for them to propagate onto. */
     ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set(CONFIG_OT_BR_MDNS_HOSTNAME));
+    ESP_ERROR_CHECK(mdns_hostname_set(br_settings()->hostname));
 
 #if CONFIG_OPENTHREAD_CLI
     ot_console_start();
     ot_register_external_commands();
+    ESP_ERROR_CHECK(console_capture_start());
 #endif
 
     static esp_openthread_config_t config = {
@@ -192,6 +212,9 @@ void app_main(void)
 #if CONFIG_OPENTHREAD_NETWORK_AUTO_START
     ot_network_auto_start();
 #endif
+
+    /* Listens on every interface; reachable once PPP is up. */
+    web_server_start();
 
     /* Backbone and border routing come up asynchronously. */
     xTaskCreate(br_backbone_task, "br_backbone", 4096, NULL, 5, NULL);

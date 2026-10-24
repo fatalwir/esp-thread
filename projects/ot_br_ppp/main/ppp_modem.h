@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 #include "esp_netif.h"
 
@@ -29,9 +31,11 @@ extern "C" {
  * authenticates it and assigns its addresses. The link is redialled for as
  * long as the board runs, so it recovers from either side restarting.
  *
+ * @param user      PPP login, or NULL/empty if the router does not ask for one.
+ * @param password  PPP password.
  * @return ESP_OK on success
  */
-esp_err_t ppp_modem_start(void);
+esp_err_t ppp_modem_start(const char *user, const char *password);
 
 /**
  * @brief Block until the PPP link reaches the RUNNING phase.
@@ -40,6 +44,11 @@ esp_err_t ppp_modem_start(void);
  * @return ESP_OK if the link came up, ESP_ERR_TIMEOUT otherwise.
  */
 esp_err_t ppp_modem_wait_connected(uint32_t timeout_ms);
+
+/**
+ * @brief Whether the PPP link is currently in the RUNNING phase.
+ */
+bool ppp_modem_is_connected(void);
 
 /**
  * @brief The PPP esp_netif handle, or NULL before ppp_modem_start().

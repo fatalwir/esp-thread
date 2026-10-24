@@ -1,7 +1,8 @@
-# Sized for 4 MB of flash
-# the border router image is far larger than ot_cli (NAT64, SRP/DNS-SD server,
-# mDNS, border routing) and there is room left for the web UI later.
-# Name,     Type, SubType, Offset,  Size, Flags
-nvs,        data, nvs,      ,  0x6000,
-phy_init,   data, phy,      ,  0x1000,
-factory,    app,  factory,  ,      3M,
+# Sized for 4 MB of flash, with two app slots for OTA updates from the web
+# interface. Each slot holds 1.875 MB; the image is about 1.6 MB.
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x10000,
+otadata,    data, ota,     0x19000,  0x2000,
+phy_init,   data, phy,     0x1b000,  0x1000,
+ota_0,      app,  ota_0,   0x20000,  0x1e0000,
+ota_1,      app,  ota_1,   0x200000, 0x1e0000,
