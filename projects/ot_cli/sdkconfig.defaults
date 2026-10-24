@@ -29,6 +29,8 @@ CONFIG_OPENTHREAD_CONSOLE_ENABLE=n
 # Hardcoded network provisioning: every node built with this sdkconfig gets the
 # exact same Thread Operational Dataset baked in and joins/forms the network on
 # boot automatically - no "ot dataset ..." / "ot thread start" CLI steps needed.
+# Placeholder test dataset. Put your real one in network.defaults at the
+# repository root (see network.defaults.example); it overrides these.
 CONFIG_OPENTHREAD_NETWORK_AUTO_START=y
 CONFIG_OPENTHREAD_NETWORK_NAME="ESPThreadTest"
 CONFIG_OPENTHREAD_NETWORK_CHANNEL=15

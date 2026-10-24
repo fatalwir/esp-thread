@@ -6,3 +6,6 @@ projects/**/build/
 projects/**/managed_components/
 projects/**/dependencies.lock
 projects/**/sdkconfig
+
+# Local Thread network credentials and site settings
+network.defaults

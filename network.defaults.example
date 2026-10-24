@@ -1,0 +1,21 @@
+# Thread network and site settings for all projects.
+#
+# Copy to network.defaults (ignored by git) and fill in your own values. The
+# build applies it on top of each project's sdkconfig.defaults, so every
+# project joins the same mesh. Without it, the placeholder dataset below is
+# used, which is also what sdkconfig.defaults contains.
+#
+# Generate a fresh dataset on any Thread device with `dataset init new`, then
+# read the values with `dataset active`, or copy them from an existing border
+# router to join its network.
+
+CONFIG_OPENTHREAD_NETWORK_NAME="ESPThreadTest"
+CONFIG_OPENTHREAD_NETWORK_CHANNEL=15
+CONFIG_OPENTHREAD_NETWORK_PANID=0x4257
+CONFIG_OPENTHREAD_NETWORK_EXTPANID="1111111122222222"
+CONFIG_OPENTHREAD_NETWORK_MASTERKEY="000102030405060708090a0b0c0d0e0f"
+CONFIG_OPENTHREAD_NETWORK_PSKC="0102030405060708090a0b0c0d0e0f10"
+
+# Upstream DNS server that border routers synthesise into the NAT64 prefix.
+# Typically your LAN router.
+CONFIG_OPENTHREAD_DNS_SERVER_ADDR="8.8.8.8"

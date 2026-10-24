@@ -47,10 +47,31 @@ idf.py build flash monitor
 
 See each project's README for hardware and wiring.
 
-## Note
+## Thread network
 
-The Thread network key and PSKc in the `sdkconfig.defaults` files are
-placeholder test values. Do not use them for a real network.
+The dataset in the `sdkconfig.defaults` files (network name, PAN ID, network
+key, PSKc and so on) is a placeholder for testing. Do not use it for a real
+network.
+
+Your own settings go in `network.defaults` at the repository root. Git ignores
+it, so credentials never end up in a commit. Every project applies it on top
+of its `sdkconfig.defaults`, so all nodes keep joining the same mesh:
+
+```sh
+cp network.defaults.example network.defaults
+# edit network.defaults
+```
+
+The new values only reach a board if both of these are cleared:
+
+- `sdkconfig`: ESP-IDF only fills in defaults for options missing from an
+  existing `sdkconfig`, so delete it in each project you rebuild.
+- The board's NVS: once a node has joined a network it keeps that dataset in
+  NVS and ignores the compiled one. Erase it before flashing:
+
+  ```sh
+  parttool.py --port <PORT> erase_partition --partition-name nvs
+  ```
 
 ## License
 

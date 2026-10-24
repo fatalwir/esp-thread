@@ -139,6 +139,8 @@ CONFIG_OPENTHREAD_DNS_SERVER_ADDR="8.8.8.8"
 
 #
 # Thread network -- identical dataset to projects/ot_cli and ot_br_ppp.
+# Placeholder test dataset. Put your real one in network.defaults at the
+# repository root (see network.defaults.example); it overrides these.
 #
 CONFIG_OPENTHREAD_NETWORK_AUTO_START=y
 CONFIG_OPENTHREAD_NETWORK_NAME="ESPThreadTest"
