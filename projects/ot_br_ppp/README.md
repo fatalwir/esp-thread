@@ -29,19 +29,35 @@ tradeoffs are real and documented under "Limitations" below.
 
 ## Roles: who dials whom
 
-`CONFIG_LWIP_PPP_SERVER_SUPPORT=y` is what picks the role, and it is a
-**compile-time** choice. In `esp_netif_lwip_ppp.c`:
+This board is the PPP **server** in the IPCP sense: it hands out the IPv4
+pair (`192.168.77.1` for itself, `192.168.77.2` for the peer, see
+`Thread Border Router over PPP → PPP backbone`). The upstream peer is the PPP
+**client** and needs no authentication.
+
+Who *starts* LCP is a separate question. `CONFIG_LWIP_PPP_SERVER_SUPPORT=y` only
+makes `ppp_listen()` available; esp-netif calls it only when
+`esp_netif_ppp_config_t.ppp_passive` is set (`esp_netif_lwip_ppp.c`):
 
 ```c
-#ifdef CONFIG_LWIP_PPP_SERVER_SUPPORT
-    esp_err_t err = ppp_listen(ppp_ctx->ppp);
-#else
-    err_t err = ppp_connect(ppp_ctx->ppp, 0);
-#endif
+    if (ppp_ctx->ppp_passive) {
+        err = ppp_listen(ppp_ctx->ppp);
+    } else {
+        err = ppp_connect(ppp_ctx->ppp, 0);
+    }
 ```
 
-So **this board is the PPP server** and the upstream peer must be the PPP
-**client**.
+`ppp_modem.c` deliberately leaves it unset, so the board **actively sends LCP
+Configure-Requests**. A purely passive board does not work with MikroTik:
+its `ppp-client` with `null-modem=yes` sends a `CLIENT` handshake and only
+answers LCP that arrives while it dials; it never starts LCP itself.
+
+lwIP gives up after ~60 s of unanswered requests, and a session also ends when
+the peer hangs up or reboots. `ppp_modem.c` restarts negotiation every time
+the session reaches the DEAD phase, so the board keeps offering the link
+until a peer answers, and it reconnects by itself after a drop. It also takes
+the netif down while there is no session, so the border router reports the
+backbone as not running (`ot br infraif`) and withdraws its routes instead of
+advertising into a dead link.
 
 ## Build and flash
 
@@ -73,6 +89,22 @@ enumerate as different devices:
 A PPP client started on the UART bridge is talking to the console, not to PPP.
 On Linux the USB connector appears as `/dev/ttyACM*`; the peer needs a USB
 CDC-ACM driver for it.
+
+### MikroTik RouterOS
+
+Tested with RouterOS 7.24 (CHR). The board shows up under `/port` as `usb1`
+or similar:
+
+```
+/interface ppp-client add name=ppp-thread port=usb1 null-modem=yes \
+    dial-on-demand=no add-default-route=no use-peer-dns=no \
+    user="" password="" disabled=no
+```
+
+`null-modem=yes` stops RouterOS sending modem AT commands. With
+`add-default-route=no` and `use-peer-dns=no` the board does not become the
+router's uplink. The link comes up within ~10 s of enabling the client and
+recovers by itself after either side restarts.
 
 ## Getting a global IPv6 prefix from upstream — SLAAC vs DHCPv6-PD
 

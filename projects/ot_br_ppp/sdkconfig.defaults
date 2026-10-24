@@ -24,10 +24,10 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 #
 # PPP
 #
-# CONFIG_LWIP_PPP_SERVER_SUPPORT is what selects the role: with it set,
-# esp_netif_lwip_ppp.c calls ppp_listen() rather than ppp_connect(), so this
-# board is the PPP *server* and the upstream router must be the PPP *client*.
-# It is a compile-time choice, not a runtime one.
+# CONFIG_LWIP_PPP_SERVER_SUPPORT lets this board act as the PPP *server*: it
+# hands out the IPCP addresses, and the upstream router is the PPP *client*.
+# It does not decide who starts LCP -- that is esp_netif_ppp_config_t's
+# ppp_passive, which ppp_modem.c leaves false on purpose. See the README.
 #
 CONFIG_LWIP_PPP_SUPPORT=y
 CONFIG_LWIP_PPP_SERVER_SUPPORT=y
